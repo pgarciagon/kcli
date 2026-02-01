@@ -1,0 +1,47 @@
+{
+  "methods": {
+    "burn": {
+      "argument": "pob.burn_arguments",
+      "return": "pob.burn_result",
+      "entry_point": 2241834181,
+      "description": "Burn KOIN to receive VHP",
+      "read_only": false
+    }
+  },
+  "koilib_types": {
+    "nested": {
+      "pob": {
+        "nested": {
+          "burn_arguments": {
+            "fields": {
+              "token_amount": {
+                "type": "uint64",
+                "id": 1,
+                "options": {
+                  "jstype": "JS_STRING"
+                }
+              },
+              "burn_address": {
+                "type": "bytes",
+                "id": 2,
+                "options": {
+                  "(koinos.btype)": "ADDRESS"
+                }
+              },
+              "vhp_address": {
+                "type": "bytes",
+                "id": 3,
+                "options": {
+                  "(koinos.btype)": "ADDRESS"
+                }
+              }
+            }
+          },
+          "burn_result": {
+            "fields": {}
+          }
+        }
+      }
+    }
+  }
+}
