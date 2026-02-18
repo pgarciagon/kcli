@@ -6,16 +6,30 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as net from 'net';
+import * as https from 'https';
+import { lookup as dnsLookup } from 'dns/promises';
 import * as readlineSync from 'readline-sync';
+import { execSync } from 'child_process';
 import { ethers } from 'ethers';
 import tokenAbi from './abis/token.json';
 import pobAbi from './abis/pob.json';
+import fogataAbi from './abis/fogata.json';
 import packageJson from '../package.json';
 
 const program = new Command();
 const CLI_VERSION = packageJson.version;
 
 const LATEST_CHANGES = [
+  'producer-dashboard now paginates block fetches so --window can scan more than 1000 blocks.',
+  'producer-dashboard now has a peers view with active peer IPs, geolocation, ping, and role heuristics.',
+  'producer-dashboard now detects Fogata pools dynamically via get_pool_params and shows pool name.',
+  'producer-dashboard now shows estimated APY and total virtual supply (VHP + KOIN).',
+  'producer-dashboard now highlights Fogata pool addresses in orange.',
+  'producer-dashboard now shows KOIN and VHP as whole numbers and removes SUM.',
+  'producer-dashboard now shows KOIN, VHP, and SUM balances for active producers.',
+  'Added producer-dashboard command for a live text-based view of active block producers.',
+  'Added get-producer-key command to query the public key registered for a producer address.',
   'Added global --changes option to display the latest release notes.',
   'register-producer-key now supports one-argument mode using mainProducerAddress from config.',
   'Added config support for --main-producer-address with default producer address bootstrap.',
@@ -33,6 +47,8 @@ function showLatestChanges(): void {
 // Default RPC endpoint (can be overridden with -r flag)
 const DEFAULT_RPC = 'https://api.koinos.io';
 const DEFAULT_MAIN_PRODUCER_ADDRESS = '14MHW6TF8gw8EuMRLCJc2PQHLzZLKuwGqb';
+const ANSI_ORANGE = '\x1b[38;5;208m';
+const ANSI_RESET = '\x1b[0m';
 
 // Mainnet contract addresses
 const KOIN_CONTRACT = '19GYjDBVXU7keLbYvMLazsGQn3GTWHjHkK';
@@ -940,6 +956,1049 @@ program
         console.error(`   Receipt: ${JSON.stringify(error.receipt, null, 2)}`);
       }
     }
+  });
+
+// Get block producer public key registered to a producer address
+program
+  .command('get-producer-key')
+  .description('Get the block producer public key registered to a producer address')
+  .argument('[producerAddress]', 'Producer address (optional, uses main producer address from config if omitted)')
+  .action(async (producerAddressArg?: string) => {
+    const opts = program.opts();
+    const provider = new Provider([opts.rpc]);
+    const config = loadConfig();
+
+    const producerAddress = producerAddressArg || config.mainProducerAddress;
+
+    if (!producerAddress) {
+      console.log('\n❌ No producer address available.');
+      console.log('   Usage: kcli get-producer-key <producerAddress>');
+      console.log('   Or set it in config: kcli config --main-producer-address <address>');
+      return;
+    }
+
+    // Validate producer address
+    let isValidProducerAddress = false;
+    try {
+      isValidProducerAddress = utils.isChecksumAddress(producerAddress);
+    } catch (error) {
+      isValidProducerAddress = false;
+    }
+
+    if (!isValidProducerAddress) {
+      console.log('\n❌ Invalid producer address format.');
+      return;
+    }
+
+    try {
+      const pob = new Contract({
+        id: POB_CONTRACT,
+        abi: pobAbi,
+        provider,
+      });
+
+      const { result } = await pob.functions.get_public_key({
+        producer: producerAddress,
+      });
+
+      const registeredKey = result?.value as string | undefined;
+
+      if (!registeredKey) {
+        console.log('\nℹ️  No producer public key registered for this address.');
+        console.log(`   Producer Address: ${producerAddress}`);
+        return;
+      }
+
+      console.log('\n🔑 Registered Producer Public Key:');
+      console.log(`   Producer Address: ${producerAddress}`);
+      console.log(`   Public Key: ${registeredKey}`);
+
+      try {
+        const keyBytes = utils.decodeBase64url(registeredKey);
+        console.log(`   Key Length: ${keyBytes.length} bytes`);
+      } catch (error) {
+        // Ignore decode errors here; key is still shown as returned by contract
+      }
+    } catch (error: any) {
+      console.error('\n❌ Error retrieving producer public key:');
+      if (error.message) {
+        console.error(`   Message: ${error.message}`);
+      }
+      if (error.code) {
+        console.error(`   Code: ${error.code}`);
+      }
+    }
+  });
+
+// Interactive dashboard for active block producers
+program
+  .command('producer-dashboard')
+  .description('Interactive text dashboard showing active block producers and peers')
+  .option('-w, --window <blocks>', 'Number of recent blocks to analyze', '120')
+  .option('-i, --interval <seconds>', 'Refresh interval in seconds', '5')
+  .option('-t, --top <count>', 'Number of producers to display', '20')
+  .option('-v, --view <view>', 'Initial dashboard view: producers or peers', 'producers')
+  .action(async (options: { window?: string; interval?: string; top?: string; view?: string }) => {
+    const opts = program.opts<{ rpc: string }>();
+    const provider = new Provider([opts.rpc]);
+    const koin = getSystemTokenContract(provider, KOIN_CONTRACT);
+    const vhp = getSystemTokenContract(provider, VHP_CONTRACT);
+
+    type DashboardView = 'producers' | 'peers';
+    type PeerSource = 'lsof' | 'netstat';
+
+    interface PeerConnection {
+      key: string;
+      host: string;
+      port: number;
+      endpoint: string;
+      source: PeerSource;
+    }
+
+    interface PeerConfigData {
+      sourcePath: string;
+      listenPorts: Set<number>;
+      seedHosts: Set<string>;
+      seedIps: Set<string>;
+      seedEndpoints: Set<string>;
+    }
+
+    const windowSize = parseInt(options.window || '120', 10);
+    const refreshSeconds = parseInt(options.interval || '5', 10);
+    const topCount = parseInt(options.top || '20', 10);
+    const initialView = (options.view || 'producers').toLowerCase();
+
+    if (!Number.isFinite(windowSize) || windowSize < 1) {
+      console.log('\n❌ Invalid --window value. Must be a positive integer.');
+      return;
+    }
+    if (!Number.isFinite(refreshSeconds) || refreshSeconds < 1) {
+      console.log('\n❌ Invalid --interval value. Must be a positive integer.');
+      return;
+    }
+    if (!Number.isFinite(topCount) || topCount < 1) {
+      console.log('\n❌ Invalid --top value. Must be a positive integer.');
+      return;
+    }
+    if (initialView !== 'producers' && initialView !== 'peers') {
+      console.log('\n❌ Invalid --view value. Use "producers" or "peers".');
+      return;
+    }
+
+    let currentView = initialView as DashboardView;
+    let stopped = false;
+    let refreshing = false;
+    let timer: NodeJS.Timeout | undefined;
+    let stdinRawEnabled = false;
+    let peerConfigWarning = '';
+    let peerSamples = 0;
+    let stdinHandler: ((chunk: string | Buffer) => void) | undefined;
+    const poolInfoCache = new Map<string, { isFogataPool: boolean; poolName: string; checkedAt: number }>();
+    const geolocationCache = new Map<string, { value: string; checkedAt: number }>();
+    const geolocationInFlight = new Map<string, Promise<string>>();
+    const pingCache = new Map<string, { value: string; checkedAt: number }>();
+    const pingInFlight = new Map<string, Promise<string>>();
+    const peerSeenCounter = new Map<string, number>();
+    const peerConfigData: PeerConfigData = {
+      sourcePath: '',
+      listenPorts: new Set<number>([8888]),
+      seedHosts: new Set<string>(),
+      seedIps: new Set<string>(),
+      seedEndpoints: new Set<string>(),
+    };
+    const POOL_INFO_TTL_MS = 10 * 60 * 1000;
+    const GEOLOCATION_TTL_MS = 12 * 60 * 60 * 1000;
+    const PING_TTL_MS = 20 * 1000;
+    const MAX_BLOCKS_PER_BLOCK_STORE_REQUEST = 1000;
+
+    const stopDashboard = () => {
+      if (stopped) return;
+      stopped = true;
+      if (timer) {
+        clearInterval(timer);
+      }
+      if (stdinHandler) {
+        process.stdin.off('data', stdinHandler);
+      }
+      if (process.stdin.isTTY && stdinRawEnabled) {
+        process.stdin.setRawMode(false);
+        process.stdin.pause();
+      }
+      console.log('\nDashboard stopped.');
+      process.exit(0);
+    };
+
+    process.on('SIGINT', stopDashboard);
+    process.on('SIGTERM', stopDashboard);
+
+    const formatCell = (value: string, width: number): string => {
+      if (value.length <= width) return value.padStart(width);
+      return `${value.slice(0, width - 3)}...`;
+    };
+
+    const formatLeftCell = (value: string, width: number): string => {
+      if (value.length <= width) return value.padEnd(width);
+      return `${value.slice(0, width - 3)}...`;
+    };
+
+    const formatWholeUnits = (value: bigint, decimals: number): string => {
+      const divisor = BigInt(10) ** BigInt(decimals);
+      return (value / divisor).toString();
+    };
+
+    const isValidAddress = (address: string): boolean => {
+      try {
+        return utils.isChecksumAddress(address);
+      } catch (error) {
+        return false;
+      }
+    };
+
+    const normalizeHost = (value: string): string => {
+      const trimmed = value.trim().replace(/^\[|\]$/g, '');
+      const percentIndex = trimmed.indexOf('%');
+      const withoutInterface = percentIndex >= 0 ? trimmed.slice(0, percentIndex) : trimmed;
+      return withoutInterface.toLowerCase();
+    };
+
+    const parseEndpointToken = (value: string): { host: string; port: number } | null => {
+      const token = value.trim();
+      if (!token) return null;
+
+      const multiaddrMatch = token.match(/\/(?:ip4|ip6|dns4|dns6|dns)\/([^/]+)\/tcp\/(\d+)/i);
+      if (multiaddrMatch) {
+        const host = normalizeHost(multiaddrMatch[1]);
+        const port = parseInt(multiaddrMatch[2], 10);
+        if (Number.isFinite(port) && port > 0 && port <= 65535) {
+          return { host, port };
+        }
+        return null;
+      }
+
+      const bracketMatch = token.match(/^\[([^\]]+)\]:(\d+)$/);
+      if (bracketMatch) {
+        const host = normalizeHost(bracketMatch[1]);
+        const port = parseInt(bracketMatch[2], 10);
+        if (Number.isFinite(port) && port > 0 && port <= 65535) {
+          return { host, port };
+        }
+        return null;
+      }
+
+      const colonMatch = token.match(/^(.+):(\d+)$/);
+      if (colonMatch) {
+        const host = normalizeHost(colonMatch[1]);
+        const port = parseInt(colonMatch[2], 10);
+        if (Number.isFinite(port) && port > 0 && port <= 65535) {
+          return { host, port };
+        }
+        return null;
+      }
+
+      const dotPortMatch = token.match(/^(.+)\.(\d+)$/);
+      if (dotPortMatch) {
+        const host = normalizeHost(dotPortMatch[1]);
+        const port = parseInt(dotPortMatch[2], 10);
+        if (Number.isFinite(port) && port > 0 && port <= 65535) {
+          return { host, port };
+        }
+      }
+
+      return null;
+    };
+
+    const formatPeerEndpoint = (host: string, port: number): string => {
+      if (net.isIP(host) === 6) {
+        return `[${host}]:${port}`;
+      }
+      return `${host}:${port}`;
+    };
+
+    const isLoopbackHost = (host: string): boolean => {
+      const normalized = normalizeHost(host);
+      if (!normalized) return true;
+      if (normalized === 'localhost') return true;
+      if (normalized === '0.0.0.0' || normalized === '::') return true;
+
+      const ipType = net.isIP(normalized);
+      if (ipType === 4) {
+        return normalized.startsWith('127.');
+      }
+      if (ipType === 6) {
+        return normalized === '::1';
+      }
+      return false;
+    };
+
+    const isPrivateIp = (host: string): boolean => {
+      const normalized = normalizeHost(host);
+      const ipType = net.isIP(normalized);
+
+      if (ipType === 4) {
+        if (normalized.startsWith('10.')) return true;
+        if (normalized.startsWith('127.')) return true;
+        if (normalized.startsWith('192.168.')) return true;
+        if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(normalized)) return true;
+        return false;
+      }
+
+      if (ipType === 6) {
+        if (normalized === '::1') return true;
+        if (normalized.startsWith('fe80:')) return true;
+        if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
+        return false;
+      }
+
+      return false;
+    };
+
+    const addSeedEndpoint = (host: string, port: number): void => {
+      const normalizedHost = normalizeHost(host);
+      if (!normalizedHost || !Number.isFinite(port) || port < 1 || port > 65535) {
+        return;
+      }
+      peerConfigData.listenPorts.add(port);
+      peerConfigData.seedHosts.add(normalizedHost);
+      if (net.isIP(normalizedHost)) {
+        peerConfigData.seedIps.add(normalizedHost);
+      }
+      peerConfigData.seedEndpoints.add(`${normalizedHost}|${port}`);
+    };
+
+    const loadPeerConfig = async (): Promise<void> => {
+      const candidates = Array.from(new Set([
+        process.env.KOINOS_CONFIG_PATH,
+        process.env.KOINOS_BASEDIR ? path.join(process.env.KOINOS_BASEDIR, 'config', 'config.yml') : undefined,
+        path.join(os.homedir(), '.koinos', 'config', 'config.yml'),
+        path.join(os.homedir(), '.koinos', 'config.yml'),
+        '/etc/koinos/config.yml',
+      ].filter((candidate): candidate is string => Boolean(candidate))));
+
+      const selectedPath = candidates.find((candidate) => fs.existsSync(candidate));
+      if (!selectedPath) {
+        return;
+      }
+
+      peerConfigData.sourcePath = selectedPath;
+
+      let configContent = '';
+      try {
+        configContent = fs.readFileSync(selectedPath, 'utf8');
+      } catch (error) {
+        peerConfigWarning = `Could not read peer config at ${selectedPath}.`;
+        return;
+      }
+
+      const seedEntries: Array<{ host: string; port: number }> = [];
+      const lines = configContent.split(/\r?\n/);
+      let inP2pSection = false;
+
+      for (const rawLine of lines) {
+        const withoutComment = rawLine.split('#')[0];
+        if (!withoutComment.trim()) continue;
+
+        if (/^\S/.test(rawLine)) {
+          inP2pSection = withoutComment.trim() === 'p2p:';
+          continue;
+        }
+
+        if (!inP2pSection) continue;
+        const trimmed = withoutComment.trim();
+
+        const listenMatch = trimmed.match(/^listen:\s*(.+)$/);
+        if (listenMatch) {
+          const listenValue = listenMatch[1].trim();
+          const listenPortMatch = listenValue.match(/\/tcp\/(\d+)/);
+          if (listenPortMatch) {
+            const listenPort = parseInt(listenPortMatch[1], 10);
+            if (Number.isFinite(listenPort) && listenPort > 0 && listenPort <= 65535) {
+              peerConfigData.listenPorts.add(listenPort);
+            }
+          } else {
+            const parsedListen = parseEndpointToken(listenValue);
+            if (parsedListen) {
+              peerConfigData.listenPorts.add(parsedListen.port);
+            }
+          }
+          continue;
+        }
+
+        const peerMatch = trimmed.match(/^-\s*(.+)$/);
+        if (peerMatch) {
+          const parsedPeer = parseEndpointToken(peerMatch[1].trim());
+          if (parsedPeer) {
+            seedEntries.push({ host: parsedPeer.host, port: parsedPeer.port });
+          }
+        }
+      }
+
+      await Promise.all(seedEntries.map(async (entry) => {
+        addSeedEndpoint(entry.host, entry.port);
+        if (net.isIP(entry.host)) return;
+
+        try {
+          const resolved = await dnsLookup(entry.host, { all: true });
+          resolved.forEach((resolvedEntry) => {
+            addSeedEndpoint(resolvedEntry.address, entry.port);
+          });
+        } catch (error) {
+          // Ignore lookup failures; we still retain hostname-based matching.
+        }
+      }));
+    };
+
+    const shouldIncludeConnection = (commandName: string, localPort: number, remotePort: number): boolean => {
+      const hasKnownP2pPort = peerConfigData.listenPorts.has(localPort) || peerConfigData.listenPorts.has(remotePort);
+      const isKoinosProcess = /(koinos|block[-_]?producer|koinosd|p2p)/i.test(commandName);
+      return hasKnownP2pPort || isKoinosProcess;
+    };
+
+    const buildPeerConnection = (host: string, port: number, source: PeerSource): PeerConnection | null => {
+      const normalizedHost = normalizeHost(host);
+      if (!normalizedHost || isLoopbackHost(normalizedHost)) {
+        return null;
+      }
+
+      return {
+        key: `${normalizedHost}|${port}`,
+        host: normalizedHost,
+        port,
+        endpoint: formatPeerEndpoint(normalizedHost, port),
+        source,
+      };
+    };
+
+    const collectPeersFromLsof = (): PeerConnection[] => {
+      try {
+        const output = execSync('lsof -nP -iTCP -sTCP:ESTABLISHED', {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        const lines = output.split(/\r?\n/).slice(1);
+        const peers = new Map<string, PeerConnection>();
+
+        for (const line of lines) {
+          if (!line.includes(' TCP ') || !line.includes('->')) continue;
+
+          const commandName = (line.trim().split(/\s+/)[0] || '').toLowerCase();
+          const tcpIndex = line.indexOf(' TCP ');
+          if (tcpIndex < 0) continue;
+
+          const connectionValue = line
+            .slice(tcpIndex + 5)
+            .replace(/\s+\(ESTABLISHED\)\s*$/, '')
+            .trim();
+
+          const parts = connectionValue.split('->');
+          if (parts.length !== 2) continue;
+
+          const local = parseEndpointToken(parts[0]);
+          const remote = parseEndpointToken(parts[1]);
+          if (!local || !remote) continue;
+          if (!shouldIncludeConnection(commandName, local.port, remote.port)) continue;
+
+          const peer = buildPeerConnection(remote.host, remote.port, 'lsof');
+          if (!peer) continue;
+          peers.set(peer.key, peer);
+        }
+
+        return Array.from(peers.values());
+      } catch (error) {
+        return [];
+      }
+    };
+
+    const collectPeersFromNetstat = (): PeerConnection[] => {
+      try {
+        const output = execSync('netstat -an', {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        const lines = output.split(/\r?\n/);
+        const peers = new Map<string, PeerConnection>();
+
+        for (const line of lines) {
+          if (!/ESTABLISHED/i.test(line)) continue;
+
+          const connectionMatch = line.match(/^\s*tcp\S*\s+\d+\s+\d+\s+(\S+)\s+(\S+)\s+ESTABLISHED/i);
+          if (!connectionMatch) continue;
+
+          const local = parseEndpointToken(connectionMatch[1]);
+          const remote = parseEndpointToken(connectionMatch[2]);
+          if (!local || !remote) continue;
+          if (!shouldIncludeConnection('netstat', local.port, remote.port)) continue;
+
+          const peer = buildPeerConnection(remote.host, remote.port, 'netstat');
+          if (!peer) continue;
+          if (!peers.has(peer.key)) {
+            peers.set(peer.key, peer);
+          }
+        }
+
+        return Array.from(peers.values());
+      } catch (error) {
+        return [];
+      }
+    };
+
+    const collectActivePeers = (): { peers: PeerConnection[]; source: string } => {
+      const combined = new Map<string, PeerConnection>();
+      const sourceParts: string[] = [];
+
+      const lsofPeers = collectPeersFromLsof();
+      if (lsofPeers.length > 0) {
+        sourceParts.push('lsof');
+        lsofPeers.forEach((peer) => combined.set(peer.key, peer));
+      }
+
+      const netstatPeers = collectPeersFromNetstat();
+      if (netstatPeers.length > 0) {
+        sourceParts.push('netstat');
+        netstatPeers.forEach((peer) => {
+          if (!combined.has(peer.key)) {
+            combined.set(peer.key, peer);
+          }
+        });
+      }
+
+      const source = sourceParts.length > 0 ? sourceParts.join('+') : 'none';
+      return { peers: Array.from(combined.values()), source };
+    };
+
+    const fetchGeolocation = async (host: string): Promise<string> => {
+      if (net.isIP(host) === 0) return 'n/a';
+      if (isPrivateIp(host)) return 'Private/Local';
+
+      return new Promise((resolve) => {
+        let settled = false;
+        const finish = (value: string) => {
+          if (settled) return;
+          settled = true;
+          resolve(value);
+        };
+
+        const req = https.get(`https://ipwho.is/${encodeURIComponent(host)}`, (res) => {
+          let body = '';
+          res.on('data', (chunk) => {
+            body += chunk.toString();
+          });
+          res.on('end', () => {
+            try {
+              const parsed = JSON.parse(body) as {
+                success?: boolean;
+                city?: string;
+                region?: string;
+                country?: string;
+              };
+
+              if (parsed.success === false) {
+                finish('Unknown');
+                return;
+              }
+
+              const location = [parsed.city, parsed.region, parsed.country]
+                .filter((value): value is string => Boolean(value && value.trim()))
+                .join(', ');
+
+              finish(location || 'Unknown');
+            } catch (error) {
+              finish('Unknown');
+            }
+          });
+        });
+
+        req.on('error', () => finish('Unknown'));
+        req.setTimeout(2500, () => {
+          req.destroy();
+          finish('Unknown');
+        });
+      });
+    };
+
+    const getGeolocation = async (host: string): Promise<string> => {
+      const now = Date.now();
+      const cached = geolocationCache.get(host);
+      if (cached && now - cached.checkedAt < GEOLOCATION_TTL_MS) {
+        return cached.value;
+      }
+
+      const inFlight = geolocationInFlight.get(host);
+      if (inFlight) return inFlight;
+
+      const lookupPromise = fetchGeolocation(host)
+        .then((value) => {
+          geolocationCache.set(host, { value, checkedAt: Date.now() });
+          return value;
+        })
+        .finally(() => {
+          geolocationInFlight.delete(host);
+        });
+
+      geolocationInFlight.set(host, lookupPromise);
+      return lookupPromise;
+    };
+
+    const fetchPingSeconds = async (host: string, port: number): Promise<string> => {
+      if (!Number.isFinite(port) || port < 1 || port > 65535) return 'n/a';
+
+      return new Promise((resolve) => {
+        const startedAt = Date.now();
+        const socket = net.createConnection({ host, port });
+        let settled = false;
+
+        const finish = (value: string) => {
+          if (settled) return;
+          settled = true;
+          socket.destroy();
+          resolve(value);
+        };
+
+        socket.setTimeout(2500);
+        socket.once('connect', () => {
+          const elapsedSeconds = (Date.now() - startedAt) / 1000;
+          finish(elapsedSeconds.toFixed(3));
+        });
+        socket.once('timeout', () => finish('timeout'));
+        socket.once('error', () => finish('n/a'));
+      });
+    };
+
+    const getPingSeconds = async (host: string, port: number): Promise<string> => {
+      const cacheKey = `${host}|${port}`;
+      const now = Date.now();
+      const cached = pingCache.get(cacheKey);
+
+      if (cached && now - cached.checkedAt < PING_TTL_MS) {
+        return cached.value;
+      }
+
+      const inFlight = pingInFlight.get(cacheKey);
+      if (inFlight) return inFlight;
+
+      const pingPromise = fetchPingSeconds(host, port)
+        .then((value) => {
+          pingCache.set(cacheKey, { value, checkedAt: Date.now() });
+          return value;
+        })
+        .finally(() => {
+          pingInFlight.delete(cacheKey);
+        });
+
+      pingInFlight.set(cacheKey, pingPromise);
+      return pingPromise;
+    };
+
+    const classifyPeerRole = (peer: PeerConnection, seenPercent: number, pingSeconds: string): string => {
+      if (peerConfigData.seedEndpoints.has(peer.key) || peerConfigData.seedIps.has(peer.host) || peerConfigData.seedHosts.has(peer.host)) {
+        return 'Seed';
+      }
+
+      const pingValue = Number.parseFloat(pingSeconds);
+      const lowLatency = Number.isFinite(pingValue) && pingValue <= 0.35;
+      const stable = seenPercent >= 70;
+      const moderate = seenPercent >= 45;
+
+      if (stable && lowLatency) return 'Likely Producer';
+      if (moderate && lowLatency) return 'Possible Producer';
+      return 'Relay/Unknown';
+    };
+
+    const fetchBlocksByHeightPaged = async (headBlockId: string, startHeight: number, endHeight: number): Promise<any[]> => {
+      const allItems: any[] = [];
+      let nextStartHeight = startHeight;
+
+      while (nextStartHeight <= endHeight) {
+        const remainingBlocks = endHeight - nextStartHeight + 1;
+        const chunkSize = Math.min(MAX_BLOCKS_PER_BLOCK_STORE_REQUEST, remainingBlocks);
+
+        const chunkResponse = await provider.call<{ block_items: any[] }>('block_store.get_blocks_by_height', {
+          head_block_id: headBlockId,
+          ancestor_start_height: nextStartHeight,
+          num_blocks: chunkSize,
+          return_block: true,
+          return_receipt: false,
+        });
+
+        const chunkItems = chunkResponse.block_items || [];
+        if (!chunkItems.length) {
+          break;
+        }
+
+        allItems.push(...chunkItems);
+
+        if (chunkItems.length < chunkSize) {
+          break;
+        }
+
+        nextStartHeight += chunkSize;
+      }
+
+      return allItems;
+    };
+
+    const getFogataPoolInfo = async (producer: string): Promise<{ isFogataPool: boolean; poolName: string }> => {
+      const now = Date.now();
+      const cached = poolInfoCache.get(producer);
+
+      if (cached && now - cached.checkedAt < POOL_INFO_TTL_MS) {
+        return { isFogataPool: cached.isFogataPool, poolName: cached.poolName };
+      }
+
+      if (!isValidAddress(producer)) {
+        const info = { isFogataPool: false, poolName: '', checkedAt: now };
+        poolInfoCache.set(producer, info);
+        return { isFogataPool: info.isFogataPool, poolName: info.poolName };
+      }
+
+      try {
+        const fogataContract = new Contract({
+          id: producer,
+          abi: fogataAbi,
+          provider,
+        });
+
+        const { result } = await fogataContract.functions.get_pool_params({});
+        const poolName = (result?.name as string | undefined)?.trim() || 'Fogata Pool';
+        const info = { isFogataPool: true, poolName, checkedAt: now };
+        poolInfoCache.set(producer, info);
+        return { isFogataPool: info.isFogataPool, poolName: info.poolName };
+      } catch (error) {
+        const info = { isFogataPool: false, poolName: '', checkedAt: now };
+        poolInfoCache.set(producer, info);
+        return { isFogataPool: info.isFogataPool, poolName: info.poolName };
+      }
+    };
+
+    const drawProducerView = async (): Promise<void> => {
+      try {
+        const headInfo = await provider.getHeadInfo();
+        const headHeight = parseInt(headInfo.head_topology?.height || '0', 10);
+        const headBlockId = headInfo.head_topology?.id;
+
+        if (!headBlockId || !headHeight) {
+          throw new Error('Unable to retrieve head block information');
+        }
+
+        const startHeight = Math.max(1, headHeight - windowSize + 1);
+        const blocksToFetch = Math.max(1, headHeight - startHeight + 1);
+
+        const items = await fetchBlocksByHeightPaged(headBlockId, startHeight, headHeight);
+        const stats = new Map<string, { count: number; lastHeight: number }>();
+        let latestBlockTimestamp = 0;
+
+        for (const item of items) {
+          const signer = item?.block?.header?.signer || 'unknown';
+          const blockHeight = parseInt(item?.block_height || '0', 10);
+          const timestamp = parseInt(item?.block?.header?.timestamp || '0', 10);
+
+          if (timestamp > latestBlockTimestamp) {
+            latestBlockTimestamp = timestamp;
+          }
+
+          const current = stats.get(signer);
+          if (current) {
+            current.count += 1;
+            if (blockHeight > current.lastHeight) {
+              current.lastHeight = blockHeight;
+            }
+          } else {
+            stats.set(signer, { count: 1, lastHeight: blockHeight });
+          }
+        }
+
+        const ranking = Array.from(stats.entries()).sort((a, b) => {
+          if (b[1].count !== a[1].count) return b[1].count - a[1].count;
+          return b[1].lastHeight - a[1].lastHeight;
+        });
+
+        const topRanking = ranking.slice(0, topCount);
+        const balanceData = new Map<string, { koin: string; vhp: string }>();
+        const vhpRawByProducer = new Map<string, bigint>();
+        const poolInfoData = new Map<string, { isFogataPool: boolean; poolName: string }>();
+        let balanceUnavailableReason = '';
+
+        await Promise.all(topRanking.map(async ([producer]) => {
+          const poolInfo = await getFogataPoolInfo(producer);
+          poolInfoData.set(producer, poolInfo);
+
+          if (!isValidAddress(producer)) {
+            balanceData.set(producer, { koin: 'n/a', vhp: 'n/a' });
+            vhpRawByProducer.set(producer, BigInt(0));
+            return;
+          }
+
+          try {
+            const [{ result: koinResult }, { result: vhpResult }] = await Promise.all([
+              koin.functions.balance_of({ owner: producer }),
+              vhp.functions.balance_of({ owner: producer }),
+            ]);
+
+            const koinRaw = BigInt(koinResult?.value || '0');
+            const vhpRaw = BigInt(vhpResult?.value || '0');
+
+            balanceData.set(producer, {
+              koin: formatWholeUnits(koinRaw, 8),
+              vhp: formatWholeUnits(vhpRaw, 8),
+            });
+            vhpRawByProducer.set(producer, vhpRaw);
+          } catch (error: any) {
+            if (!balanceUnavailableReason) {
+              balanceUnavailableReason = error?.message || String(error);
+            }
+            balanceData.set(producer, { koin: 'n/a', vhp: 'n/a' });
+            vhpRawByProducer.set(producer, BigInt(0));
+          }
+        }));
+
+        // Fetch VHP balances for remaining active producers to estimate network APY
+        await Promise.all(ranking.map(async ([producer]) => {
+          if (vhpRawByProducer.has(producer)) return;
+          if (!isValidAddress(producer)) {
+            vhpRawByProducer.set(producer, BigInt(0));
+            return;
+          }
+
+          try {
+            const { result: vhpResult } = await vhp.functions.balance_of({ owner: producer });
+            vhpRawByProducer.set(producer, BigInt(vhpResult?.value || '0'));
+          } catch (error: any) {
+            if (!balanceUnavailableReason) {
+              balanceUnavailableReason = error?.message || String(error);
+            }
+            vhpRawByProducer.set(producer, BigInt(0));
+          }
+        }));
+
+        const activeVhpRaw = ranking.reduce((acc, [producer]) => {
+          return acc + (vhpRawByProducer.get(producer) || BigInt(0));
+        }, BigInt(0));
+
+        let koinSupplyRaw: bigint | undefined;
+        let vhpSupplyRaw: bigint | undefined;
+        let virtualSupplyRaw: bigint | undefined;
+        let supplyUnavailableReason = '';
+
+        try {
+          const [{ result: koinSupplyResult }, { result: vhpSupplyResult }] = await Promise.all([
+            koin.functions.total_supply({}),
+            vhp.functions.total_supply({}),
+          ]);
+
+          koinSupplyRaw = BigInt(koinSupplyResult?.value || '0');
+          vhpSupplyRaw = BigInt(vhpSupplyResult?.value || '0');
+          virtualSupplyRaw = koinSupplyRaw + vhpSupplyRaw;
+        } catch (error: any) {
+          supplyUnavailableReason = error?.message || String(error);
+        }
+
+        let estimatedApy = 'n/a';
+        if (virtualSupplyRaw !== undefined && activeVhpRaw > BigInt(0)) {
+          const virtualSupplyFloat = parseFloat(utils.formatUnits(virtualSupplyRaw.toString(), 8));
+          const activeVhpFloat = parseFloat(utils.formatUnits(activeVhpRaw.toString(), 8));
+
+          if (activeVhpFloat > 0) {
+            // Estimated APY for actively producing VHP based on 2% annual inflation target.
+            estimatedApy = ((2 * virtualSupplyFloat) / activeVhpFloat).toFixed(2);
+          }
+        }
+
+        const fetchedBlocks = items.length;
+        const now = new Date();
+
+        process.stdout.write('\x1Bc');
+        console.log('📊 Koinos Producer Dashboard (Ctrl+C or q to exit)');
+        console.log('─'.repeat(140));
+        console.log(' View: PRODUCERS | Press 1=producers 2=peers q=quit');
+        console.log(` RPC: ${opts.rpc}`);
+        console.log(` Updated: ${now.toISOString()}`);
+        console.log(` Head Block: ${headHeight}`);
+        if (latestBlockTimestamp > 0) {
+          console.log(` Last Block Time: ${new Date(latestBlockTimestamp).toISOString()}`);
+        }
+        console.log(` Window: ${startHeight} → ${headHeight} (${fetchedBlocks} block${fetchedBlocks === 1 ? '' : 's'})`);
+        console.log(` Active Producers: ${ranking.length}`);
+        if (virtualSupplyRaw !== undefined && koinSupplyRaw !== undefined && vhpSupplyRaw !== undefined) {
+          console.log(` Total KOIN Supply: ${formatWholeUnits(koinSupplyRaw, 8)}`);
+          console.log(` Total VHP Supply: ${formatWholeUnits(vhpSupplyRaw, 8)}`);
+          console.log(` Total Virtual Supply (VHP + KOIN): ${formatWholeUnits(virtualSupplyRaw, 8)}`);
+        } else {
+          console.log(' Total Virtual Supply (VHP + KOIN): n/a');
+        }
+        console.log(` Estimated APY (active window): ${estimatedApy === 'n/a' ? 'n/a' : `${estimatedApy}%`}`);
+        if (balanceUnavailableReason) {
+          console.log(' ⚠️  Balance data unavailable for one or more producers on this RPC.');
+        }
+        if (supplyUnavailableReason) {
+          console.log(' ⚠️  Supply/APY metrics unavailable on this RPC.');
+        }
+        console.log('─'.repeat(140));
+        console.log(` ${'#'.padEnd(3)} ${'Producer'.padEnd(36)} ${'Pool'.padEnd(24)} ${'Blocks'.padStart(8)} ${'Share'.padStart(8)} ${'Last Seen'.padStart(10)} ${'KOIN'.padStart(20)} ${'VHP'.padStart(20)}`);
+        console.log('─'.repeat(140));
+
+        if (!ranking.length) {
+          console.log(' No producer activity found in this window.');
+        } else {
+          topRanking.forEach(([producer, data], index) => {
+            const share = fetchedBlocks > 0 ? ((data.count / fetchedBlocks) * 100).toFixed(2) : '0.00';
+            const blocksAgo = Math.max(0, headHeight - data.lastHeight);
+            const balances = balanceData.get(producer) || { koin: 'n/a', vhp: 'n/a' };
+            const poolInfo = poolInfoData.get(producer) || { isFogataPool: false, poolName: '' };
+            const producerDisplay = poolInfo.isFogataPool
+              ? `${ANSI_ORANGE}${producer.padEnd(36)}${ANSI_RESET}`
+              : producer.padEnd(36);
+            const poolNameDisplay = poolInfo.isFogataPool ? poolInfo.poolName : '-';
+            console.log(
+              ` ${(index + 1).toString().padEnd(3)} ${producerDisplay} ${formatLeftCell(poolNameDisplay, 24)} ${data.count.toString().padStart(8)} ${`${share}%`.padStart(8)} ${`${blocksAgo} ago`.padStart(10)} ${formatCell(balances.koin, 20)} ${formatCell(balances.vhp, 20)}`
+            );
+          });
+        }
+
+        console.log('─'.repeat(140));
+        console.log(` Refresh every ${refreshSeconds}s | Window size ${windowSize} blocks | Showing top ${topCount}`);
+      } catch (error: any) {
+        process.stdout.write('\x1Bc');
+        console.log('📊 Koinos Producer Dashboard (Ctrl+C or q to exit)');
+        console.log('─'.repeat(140));
+        console.log('❌ Failed to refresh producer dashboard.');
+        console.log(`   ${error?.message || error}`);
+        console.log('─'.repeat(140));
+        console.log(` Retrying in ${refreshSeconds}s...`);
+      }
+    };
+
+    const drawPeersView = async (): Promise<void> => {
+      const now = new Date();
+      const { peers, source } = collectActivePeers();
+      peerSamples += 1;
+
+      const seenThisRound = new Set<string>();
+      peers.forEach((peer) => {
+        seenThisRound.add(peer.key);
+      });
+      seenThisRound.forEach((peerKey) => {
+        peerSeenCounter.set(peerKey, (peerSeenCounter.get(peerKey) || 0) + 1);
+      });
+
+      const rows = await Promise.all(peers.map(async (peer) => {
+        const [location, pingSeconds] = await Promise.all([
+          getGeolocation(peer.host),
+          getPingSeconds(peer.host, peer.port),
+        ]);
+        const seenCount = peerSeenCounter.get(peer.key) || 0;
+        const seenPercent = peerSamples > 0 ? (seenCount / peerSamples) * 100 : 0;
+        const role = classifyPeerRole(peer, seenPercent, pingSeconds);
+
+        return {
+          peer,
+          location,
+          pingSeconds,
+          seenPercent,
+          role,
+        };
+      }));
+
+      rows.sort((a, b) => {
+        if (b.seenPercent !== a.seenPercent) {
+          return b.seenPercent - a.seenPercent;
+        }
+        return a.peer.endpoint.localeCompare(b.peer.endpoint);
+      });
+
+      const visibleRows = rows.slice(0, topCount);
+
+      process.stdout.write('\x1Bc');
+      console.log('📊 Koinos Producer Dashboard (Ctrl+C or q to exit)');
+      console.log('─'.repeat(150));
+      console.log(' View: PEERS | Press 1=producers 2=peers q=quit');
+      console.log(` RPC: ${opts.rpc}`);
+      console.log(` Updated: ${now.toISOString()}`);
+      console.log(` Active Peers: ${peers.length}`);
+      console.log(` Peer Discovery Source: ${source}`);
+      if (peerConfigData.sourcePath) {
+        console.log(` Seed Config: ${peerConfigData.sourcePath}`);
+      }
+      if (peerConfigWarning) {
+        console.log(` ⚠️  ${peerConfigWarning}`);
+      }
+      console.log('─'.repeat(150));
+      console.log(` ${'#'.padEnd(3)} ${'Peer'.padEnd(32)} ${'Location'.padEnd(44)} ${'Ping(s)'.padStart(10)} ${'Seen'.padStart(8)} ${'Role'.padEnd(18)} ${'Source'.padEnd(8)}`);
+      console.log('─'.repeat(150));
+
+      if (!visibleRows.length) {
+        console.log(' No active peers detected from local sockets. Verify that your local node is running and exposing p2p connections.');
+      } else {
+        visibleRows.forEach((row, index) => {
+          const seenLabel = `${row.seenPercent.toFixed(0)}%`;
+          console.log(
+            ` ${(index + 1).toString().padEnd(3)} ${formatLeftCell(row.peer.endpoint, 32)} ${formatLeftCell(row.location, 44)} ${formatCell(row.pingSeconds, 10)} ${formatCell(seenLabel, 8)} ${formatLeftCell(row.role, 18)} ${formatLeftCell(row.peer.source, 8)}`
+          );
+        });
+      }
+
+      console.log('─'.repeat(150));
+      console.log(` Refresh every ${refreshSeconds}s | Window size ${windowSize} blocks | Showing top ${topCount}`);
+      console.log(' Heuristic role: Seed = configured seed peer; Likely/Possible Producer = stable low-latency peer; otherwise Relay/Unknown.');
+    };
+
+    const draw = async () => {
+      if (refreshing || stopped) return;
+      refreshing = true;
+      try {
+        if (currentView === 'peers') {
+          await drawPeersView();
+        } else {
+          await drawProducerView();
+        }
+      } finally {
+        refreshing = false;
+      }
+    };
+
+    const enableKeyboardControls = () => {
+      if (!process.stdin.isTTY) {
+        return;
+      }
+
+      process.stdin.setRawMode(true);
+      process.stdin.resume();
+      process.stdin.setEncoding('utf8');
+      stdinRawEnabled = true;
+
+      stdinHandler = (chunk: string | Buffer) => {
+        const key = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+
+        if (key === '\u0003') {
+          stopDashboard();
+          return;
+        }
+
+        const normalized = key.trim().toLowerCase();
+        if (normalized === 'q') {
+          stopDashboard();
+          return;
+        }
+
+        if (normalized === '1' && currentView !== 'producers') {
+          currentView = 'producers';
+          void draw();
+          return;
+        }
+
+        if (normalized === '2' && currentView !== 'peers') {
+          currentView = 'peers';
+          void draw();
+        }
+      };
+
+      process.stdin.on('data', stdinHandler);
+    };
+
+    await loadPeerConfig();
+    enableKeyboardControls();
+    await draw();
+    timer = setInterval(() => {
+      void draw();
+    }, refreshSeconds * 1000);
   });
 
 // Burn KOIN (converts to VHP)

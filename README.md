@@ -126,6 +126,38 @@ This command sends a transaction to the Proof-of-Burn contract (`159myq5YUhhoVWu
 
 If the producer address is omitted, `kcli` uses `mainProducerAddress` from `~/.kcli/config.json`.
 
+#### Get Registered Producer Public Key (PoB)
+```bash
+kcli get-producer-key <producerAddress>
+kcli get-producer-key              # Uses configured main producer address
+```
+
+This command reads PoB `get_public_key` and returns the public key assigned to the producer address (if any).
+
+#### Producer Dashboard (Interactive)
+```bash
+kcli producer-dashboard
+kcli producer-dashboard --window 240 --interval 3 --top 25
+kcli producer-dashboard --view peers
+```
+
+Shows a live text-based dashboard with two views: `producers` and `peers`.
+
+- `--window`: number of recent blocks to analyze (default: `120`)
+- `--interval`: refresh interval in seconds (default: `5`)
+- `--top`: number of producers to display (default: `20`)
+- `--view`: initial view (`producers` or `peers`, default: `producers`)
+- Switch views while running with `1` (producers) and `2` (peers)
+- Exit with `q` or `Ctrl+C`
+- Includes per-producer `KOIN` and `VHP` columns (shown as whole numbers, no decimals)
+- Shows estimated APY (based on active producers in the analyzed window)
+- Shows total virtual supply (`VHP + KOIN`)
+- Detects Fogata pools by calling `get_pool_params`; highlights those producer addresses in orange and shows pool `name`
+- Peers view shows active peer endpoint (IP:port), geolocation, ping in seconds, seen ratio, and a role heuristic (`Seed`, `Likely Producer`, `Possible Producer`, `Relay/Unknown`)
+- Seed detection uses local node `p2p.peer` config entries when available (`$KOINOS_BASEDIR/config/config.yml`, `~/.koinos/config/config.yml`, `~/.koinos/config.yml`, `/etc/koinos/config.yml`)
+- Geolocation is best-effort using `ipwho.is`; role classification is heuristic (not an on-chain proof)
+- Block window fetch is automatically paginated, so `--window` can be greater than `1000`
+
 #### Burn KOIN to Receive VHP
 ```bash
 kcli burn -p 95        # Burn 95% of KOIN balance

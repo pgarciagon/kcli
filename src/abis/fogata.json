@@ -1,0 +1,27 @@
+{
+  "methods": {
+    "get_pool_params": {
+      "argument": "",
+      "return": "fogata.pool_params",
+      "entry_point": 2396056273,
+      "description": "Get mining pool parameters",
+      "read_only": true
+    }
+  },
+  "koilib_types": {
+    "nested": {
+      "fogata": {
+        "nested": {
+          "pool_params": {
+            "fields": {
+              "name": {
+                "type": "string",
+                "id": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

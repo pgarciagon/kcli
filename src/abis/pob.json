@@ -13,6 +13,13 @@
       "entry_point": 1394158561,
       "description": "Register a block production public key to an address",
       "read_only": false
+    },
+    "get_public_key": {
+      "argument": "pob.get_public_key_arguments",
+      "return": "pob.get_public_key_result",
+      "entry_point": 2523090792,
+      "description": "Get a block production public key by producer address",
+      "read_only": true
     }
   },
   "koilib_types": {
@@ -64,6 +71,25 @@
           },
           "register_public_key_result": {
             "fields": {}
+          },
+          "get_public_key_arguments": {
+            "fields": {
+              "producer": {
+                "type": "bytes",
+                "id": 1,
+                "options": {
+                  "(koinos.btype)": "ADDRESS"
+                }
+              }
+            }
+          },
+          "get_public_key_result": {
+            "fields": {
+              "value": {
+                "type": "bytes",
+                "id": 1
+              }
+            }
           }
         }
       }
