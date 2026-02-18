@@ -10,11 +10,29 @@ import * as readlineSync from 'readline-sync';
 import { ethers } from 'ethers';
 import tokenAbi from './abis/token.json';
 import pobAbi from './abis/pob.json';
+import packageJson from '../package.json';
 
 const program = new Command();
+const CLI_VERSION = packageJson.version;
+
+const LATEST_CHANGES = [
+  'Added global --changes option to display the latest release notes.',
+  'register-producer-key now supports one-argument mode using mainProducerAddress from config.',
+  'Added config support for --main-producer-address with default producer address bootstrap.',
+];
+
+function showLatestChanges(): void {
+  console.log(`\n📝 kcli v${CLI_VERSION} - Latest Changes`);
+  console.log('─'.repeat(50));
+  LATEST_CHANGES.forEach((change, index) => {
+    console.log(` ${index + 1}. ${change}`);
+  });
+  console.log('─'.repeat(50));
+}
 
 // Default RPC endpoint (can be overridden with -r flag)
 const DEFAULT_RPC = 'https://api.koinos.io';
+const DEFAULT_MAIN_PRODUCER_ADDRESS = '14MHW6TF8gw8EuMRLCJc2PQHLzZLKuwGqb';
 
 // Mainnet contract addresses
 const KOIN_CONTRACT = '19GYjDBVXU7keLbYvMLazsGQn3GTWHjHkK';
@@ -30,19 +48,35 @@ const CONFIG_FILE = path.join(WALLET_DIR, 'config.json');
 interface Config {
   defaultAccount?: string;
   rpc?: string;
+  mainProducerAddress?: string;
 }
 
 // Load config file
 function loadConfig(): Config {
+  const defaultConfig: Config = {
+    mainProducerAddress: DEFAULT_MAIN_PRODUCER_ADDRESS,
+  };
+
   try {
     if (fs.existsSync(CONFIG_FILE)) {
       const data = fs.readFileSync(CONFIG_FILE, 'utf8');
-      return JSON.parse(data);
+      const parsed = JSON.parse(data) as Config;
+      const merged = { ...defaultConfig, ...parsed };
+
+      // Backfill missing values into config file
+      if (!parsed.mainProducerAddress) {
+        saveConfig(merged);
+      }
+
+      return merged;
     }
   } catch (error) {
     // Config file doesn't exist or is invalid, return empty config
   }
-  return {};
+
+  // Create config file with defaults on first run
+  saveConfig(defaultConfig);
+  return defaultConfig;
 }
 
 // Save config file
@@ -236,8 +270,26 @@ async function getTokenContract(provider: Provider, contractId: string): Promise
 program
   .name('kcli')
   .description('A Koinos blockchain command line tool')
-  .version('1.0.0')
-  .option('-r, --rpc <url>', 'RPC endpoint URL', DEFAULT_RPC);
+  .version(CLI_VERSION)
+  .option('-r, --rpc <url>', 'RPC endpoint URL', DEFAULT_RPC)
+  .option('-c, --changes', 'Show latest changes and exit');
+
+program.hook('preAction', () => {
+  const opts = program.opts<{ changes?: boolean }>();
+  if (opts.changes) {
+    showLatestChanges();
+    process.exit(0);
+  }
+});
+
+program.action(() => {
+  const opts = program.opts<{ changes?: boolean }>();
+  if (opts.changes) {
+    showLatestChanges();
+    return;
+  }
+  program.help({ error: true });
+});
 
 // Get chain info
 program
@@ -710,6 +762,186 @@ program
     }
   });
 
+// Register block producer public key to a producer address
+program
+  .command('register-producer-key')
+  .description('Register a block producer public key to a producer address using the PoB contract')
+  .argument('<producerAddressOrPublicKey>', 'Producer address or public key (if main producer address is configured)')
+  .argument('[publicKey]', 'Block producer public key in base64url format')
+  .option('--dry-run', 'Show transaction details without signing or submitting')
+  .action(async (producerAddressOrPublicKey: string, publicKeyArg: string | undefined, options: { dryRun?: boolean }) => {
+    const opts = program.opts();
+    const provider = new Provider([opts.rpc]);
+    const config = loadConfig();
+
+    // Support two forms:
+    // 1) kcli register-producer-key <producerAddress> <publicKey>
+    // 2) kcli register-producer-key <publicKey>  (uses config.mainProducerAddress)
+    const producerAddress = publicKeyArg ? producerAddressOrPublicKey : config.mainProducerAddress;
+    const publicKey = publicKeyArg || producerAddressOrPublicKey;
+
+    if (!producerAddress) {
+      console.log('\n❌ No producer address available.');
+      console.log('   Provide it explicitly: kcli register-producer-key <producerAddress> <publicKey>');
+      console.log('   Or set it in config: kcli config --main-producer-address <address>');
+      return;
+    }
+
+    if (!publicKeyArg) {
+      console.log(`\nℹ️  Using configured main producer address: ${producerAddress}`);
+    }
+
+    // Check if wallet exists
+    const walletFile = loadWalletFile();
+    if (!walletFile) {
+      console.log('\n❌ No wallet found. Import one first with: kcli import-wallet <privateKey>');
+      return;
+    }
+
+    // Validate producer address
+    let isValidProducerAddress = false;
+    try {
+      isValidProducerAddress = utils.isChecksumAddress(producerAddress);
+    } catch (error) {
+      isValidProducerAddress = false;
+    }
+
+    if (!isValidProducerAddress) {
+      console.log('\n❌ Invalid producer address format.');
+      return;
+    }
+
+    // Validate and inspect public key format
+    let publicKeyBytes: Uint8Array;
+    try {
+      publicKeyBytes = utils.decodeBase64url(publicKey);
+    } catch (error) {
+      console.log('\n❌ Invalid public key format. Expected base64url encoded key.');
+      return;
+    }
+
+    if (publicKeyBytes.length !== 33 && publicKeyBytes.length !== 65) {
+      console.log('\n❌ Invalid public key length.');
+      console.log(`   Decoded length: ${publicKeyBytes.length} bytes`);
+      console.log('   Expected: 33 bytes (compressed) or 65 bytes (uncompressed)');
+      return;
+    }
+
+    // Prompt for password to unlock wallet
+    console.log(`\n🔐 Unlocking wallet for address: ${walletFile.address}`);
+    const password = promptPassword('Enter wallet password: ');
+
+    let wallet;
+    try {
+      wallet = loadWallet(password);
+      if (!wallet) {
+        console.error('❌ Failed to load wallet.');
+        return;
+      }
+    } catch (error: any) {
+      console.error('❌ Invalid password. Please try again.');
+      return;
+    }
+
+    if (wallet.address !== producerAddress) {
+      console.log('\n⚠️  Wallet address differs from producer address.');
+      console.log(`   Wallet:   ${wallet.address}`);
+      console.log(`   Producer: ${producerAddress}`);
+      console.log('   This transaction must be authorized by the producer address.');
+    }
+
+    try {
+      const signer = Signer.fromWif(wallet.privateKey);
+      signer.provider = provider;
+
+      const pob = new Contract({
+        id: POB_CONTRACT,
+        abi: pobAbi,
+        provider,
+        signer,
+      });
+
+      const { operation: registerKeyOp } = await pob.functions.register_public_key({
+        producer: producerAddress,
+        public_key: publicKey,
+      }, { onlyOperation: true });
+
+      const transaction = new Transaction({
+        signer,
+        provider,
+      });
+
+      await transaction.pushOperation(registerKeyOp);
+      await transaction.prepare();
+
+      console.log('\n🔗 Producer Key Registration Summary:');
+      console.log(`   Producer Address: ${producerAddress}`);
+      console.log(`   Public Key: ${publicKey}`);
+      console.log(`   Public Key Bytes: ${publicKeyBytes.length}`);
+      console.log(`   Signer Address: ${wallet.address}`);
+
+      console.log('\n📝 Transaction Details (BEFORE SIGNING):');
+      console.log('─'.repeat(50));
+      console.log(`   Transaction ID: ${transaction.transaction.id}`);
+      console.log(`   Payer: ${transaction.transaction.header?.payer}`);
+      console.log(`   Nonce: ${transaction.transaction.header?.nonce}`);
+      console.log(`   RC Limit: ${transaction.transaction.header?.rc_limit}`);
+      console.log(`   Contract: ${registerKeyOp.call_contract?.contract_id}`);
+      console.log(`   Entry Point: ${registerKeyOp.call_contract?.entry_point}`);
+      console.log(`   Args (base64): ${registerKeyOp.call_contract?.args}`);
+      console.log('─'.repeat(50));
+
+      if (options.dryRun) {
+        console.log('\n📋 Dry run - transaction NOT signed or submitted.');
+        return;
+      }
+
+      const confirm = readlineSync.question('\n⚠️  Type "REGISTER" to confirm and sign: ');
+      if (confirm !== 'REGISTER') {
+        console.log('\n❌ Transaction cancelled.');
+        return;
+      }
+
+      console.log('\n   Signing and submitting transaction...\n');
+      await transaction.sign();
+      const receipt = await transaction.send();
+
+      console.log('✅ Registration transaction submitted!');
+      console.log(`   Transaction ID: ${transaction.transaction.id}`);
+
+      if (receipt) {
+        if (receipt.logs && receipt.logs.length > 0) {
+          console.log('   Logs:', receipt.logs);
+        }
+        if (receipt.events && receipt.events.length > 0) {
+          console.log(`   Events: ${receipt.events.length} event(s)`);
+        }
+      }
+
+      console.log('\n⏳ Waiting for transaction to be included in a block...');
+      try {
+        const blockInfo = await transaction.wait('byTransactionId', 60000);
+        console.log(`   ✅ Transaction confirmed in block ${blockInfo?.blockNumber || 'unknown'}`);
+      } catch (waitError: any) {
+        console.log('   ⚠️  Could not confirm transaction (timeout). It may still be pending.');
+      }
+    } catch (error: any) {
+      console.error('\n❌ Error registering producer key:');
+      if (error.message) {
+        console.error(`   Message: ${error.message}`);
+      }
+      if (error.code) {
+        console.error(`   Code: ${error.code}`);
+      }
+      if (error.logs && error.logs.length > 0) {
+        console.error(`   Logs: ${JSON.stringify(error.logs)}`);
+      }
+      if (error.receipt) {
+        console.error(`   Receipt: ${JSON.stringify(error.receipt, null, 2)}`);
+      }
+    }
+  });
+
 // Burn KOIN (converts to VHP)
 program
   .command('burn')
@@ -1044,8 +1276,9 @@ program
   .command('config')
   .description('View or set configuration options')
   .option('--default-account <address>', 'Set the default account address')
+  .option('--main-producer-address <address>', 'Set the main producer address used by register-producer-key')
   .option('--show', 'Show current configuration')
-  .action(async (options: { defaultAccount?: string; show?: boolean }) => {
+  .action(async (options: { defaultAccount?: string; mainProducerAddress?: string; show?: boolean }) => {
     const config = loadConfig();
     
     if (options.defaultAccount) {
@@ -1054,11 +1287,23 @@ program
       console.log(`\n✅ Default account set to: ${options.defaultAccount}`);
       return;
     }
+
+    if (options.mainProducerAddress) {
+      if (!utils.isChecksumAddress(options.mainProducerAddress)) {
+        console.log('\n❌ Invalid main producer address format.');
+        return;
+      }
+      config.mainProducerAddress = options.mainProducerAddress;
+      saveConfig(config);
+      console.log(`\n✅ Main producer address set to: ${options.mainProducerAddress}`);
+      return;
+    }
     
-    if (options.show || (!options.defaultAccount)) {
+    if (options.show || (!options.defaultAccount && !options.mainProducerAddress)) {
       console.log('\n⚙️  Current Configuration:');
       console.log(`   Config file: ${CONFIG_FILE}`);
       console.log(`   Default Account: ${config.defaultAccount || '(not set)'}`);
+      console.log(`   Main Producer Address: ${config.mainProducerAddress || '(not set)'}`);
       console.log(`   RPC: ${config.rpc || DEFAULT_RPC + ' (default)'}`);
     }
   });

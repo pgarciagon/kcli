@@ -6,6 +6,13 @@
       "entry_point": 2241834181,
       "description": "Burn KOIN to receive VHP",
       "read_only": false
+    },
+    "register_public_key": {
+      "argument": "pob.register_public_key_arguments",
+      "return": "pob.register_public_key_result",
+      "entry_point": 1394158561,
+      "description": "Register a block production public key to an address",
+      "read_only": false
     }
   },
   "koilib_types": {
@@ -38,6 +45,24 @@
             }
           },
           "burn_result": {
+            "fields": {}
+          },
+          "register_public_key_arguments": {
+            "fields": {
+              "producer": {
+                "type": "bytes",
+                "id": 1,
+                "options": {
+                  "(koinos.btype)": "ADDRESS"
+                }
+              },
+              "public_key": {
+                "type": "bytes",
+                "id": 2
+              }
+            }
+          },
+          "register_public_key_result": {
             "fields": {}
           }
         }

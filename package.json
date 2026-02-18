@@ -1,6 +1,6 @@
 {
   "name": "kcli",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A Koinos blockchain command line tool",
   "main": "dist/index.js",
   "bin": {
