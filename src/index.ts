@@ -44,16 +44,54 @@ function showLatestChanges(): void {
   console.log('─'.repeat(50));
 }
 
-// Default RPC endpoint (can be overridden with -r flag)
+// Default RPC endpoint (can be overridden with -r flag or config)
+const DEFAULT_NETWORK = 'mainnet';
 const DEFAULT_RPC = 'https://api.koinos.io';
 const DEFAULT_MAIN_PRODUCER_ADDRESS = '14MHW6TF8gw8EuMRLCJc2PQHLzZLKuwGqb';
 const ANSI_ORANGE = '\x1b[38;5;208m';
 const ANSI_RESET = '\x1b[0m';
 
-// Mainnet contract addresses
-const KOIN_CONTRACT = '19GYjDBVXU7keLbYvMLazsGQn3GTWHjHkK';
-const VHP_CONTRACT = '12Y5vW6gk8GceH53YfRkRre2Rrcsgw7Naq';
-const POB_CONTRACT = '159myq5YUhhoVWu3wsHKHiJYKPKGUrGiyv';
+interface NetworkContracts {
+  koin?: string;
+  vhp?: string;
+  pob?: string;
+}
+
+interface NetworkDefinition {
+  name: string;
+  label: string;
+  rpc: string;
+  chainId?: string;
+  healthUrl?: string;
+  faucetUrl?: string;
+  contracts: NetworkContracts;
+}
+
+const NETWORKS: Record<string, NetworkDefinition> = {
+  mainnet: {
+    name: 'mainnet',
+    label: 'Koinos Mainnet',
+    rpc: DEFAULT_RPC,
+    contracts: {
+      koin: '19GYjDBVXU7keLbYvMLazsGQn3GTWHjHkK',
+      vhp: '12Y5vW6gk8GceH53YfRkRre2Rrcsgw7Naq',
+      pob: '159myq5YUhhoVWu3wsHKHiJYKPKGUrGiyv',
+    },
+  },
+  testnet: {
+    name: 'testnet',
+    label: 'Koinos Foundation Testnet',
+    rpc: 'https://testnet.koinosfoundation.org/jsonrpc',
+    chainId: 'EiAIKVvm6-V2qmsmUvPJy09vCCLbtn9lHFpwrJbcTIEWRQ==',
+    healthUrl: 'https://testnet.koinosfoundation.org/health',
+    faucetUrl: 'https://t.me/KoinosTestnetFaucetBot',
+    contracts: {
+      koin: '1FaSvLjQJsCJKq5ybmGsMMQs8RQYyVv8ju',
+      vhp: '17n12ktwN79sR6ia9DDgCfmw77EgpbTyBi',
+      pob: '1MAbK5pYkhp9yHnfhYamC3tfSLmVRTDjd9',
+    },
+  },
+};
 
 // Wallet and config file paths
 const WALLET_DIR = path.join(os.homedir(), '.kcli');
@@ -63,13 +101,22 @@ const CONFIG_FILE = path.join(WALLET_DIR, 'config.json');
 // Config interface
 interface Config {
   defaultAccount?: string;
+  network?: string;
   rpc?: string;
   mainProducerAddress?: string;
+}
+
+interface NetworkContext {
+  networkName: string;
+  definition: NetworkDefinition;
+  rpc: string;
+  contracts: NetworkContracts;
 }
 
 // Load config file
 function loadConfig(): Config {
   const defaultConfig: Config = {
+    network: DEFAULT_NETWORK,
     mainProducerAddress: DEFAULT_MAIN_PRODUCER_ADDRESS,
   };
 
@@ -80,7 +127,7 @@ function loadConfig(): Config {
       const merged = { ...defaultConfig, ...parsed };
 
       // Backfill missing values into config file
-      if (!parsed.mainProducerAddress) {
+      if (!parsed.mainProducerAddress || !parsed.network) {
         saveConfig(merged);
       }
 
@@ -99,6 +146,69 @@ function loadConfig(): Config {
 function saveConfig(config: Config): void {
   ensureWalletDir();
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), { mode: 0o600 });
+}
+
+function getSupportedNetworkNames(): string {
+  return Object.keys(NETWORKS).join(', ');
+}
+
+function normalizeNetworkName(network: string | undefined): string {
+  return (network || DEFAULT_NETWORK).trim().toLowerCase();
+}
+
+function resolveNetworkContext(): NetworkContext {
+  const opts = program.opts<{ rpc?: string; network?: string }>();
+  const config = loadConfig();
+  const networkName = normalizeNetworkName(opts.network || config.network || DEFAULT_NETWORK);
+  const definition = NETWORKS[networkName];
+
+  if (!definition) {
+    throw new Error(`Unsupported network "${networkName}". Supported networks: ${getSupportedNetworkNames()}`);
+  }
+
+  return {
+    networkName,
+    definition,
+    rpc: opts.rpc || config.rpc || definition.rpc,
+    contracts: definition.contracts,
+  };
+}
+
+function getProvider(context: NetworkContext): Provider {
+  return new Provider([context.rpc]);
+}
+
+function requireContract(context: NetworkContext, contractName: keyof NetworkContracts, commandName: string): string | null {
+  const contractId = context.contracts[contractName];
+  if (contractId) return contractId;
+
+  console.log(`\n❌ ${commandName} needs the ${context.networkName} ${contractName.toUpperCase()} contract ID, which is not configured yet.`);
+  console.log('   Use mainnet, provide a custom contract command where available, or add this contract to the network registry after verifying it.');
+  return null;
+}
+
+function createProviderFromOptions(): { context: NetworkContext; provider: Provider } | null {
+  try {
+    const context = resolveNetworkContext();
+    return { context, provider: getProvider(context) };
+  } catch (error: any) {
+    console.error(`\n❌ ${error.message || error}`);
+    return null;
+  }
+}
+
+function assertPreparedTransactionNetwork(context: NetworkContext, transaction: Transaction): boolean {
+  if (!context.definition.chainId) return true;
+
+  const actualChainId = transaction.transaction.header?.chain_id;
+  if (actualChainId === context.definition.chainId) return true;
+
+  console.log('\n❌ Prepared transaction chain ID does not match the selected network.');
+  console.log(`   Network: ${context.networkName}`);
+  console.log(`   Expected: ${context.definition.chainId}`);
+  console.log(`   Actual:   ${actualChainId || '(missing)'}`);
+  console.log('   Refusing to sign or submit this transaction.');
+  return false;
 }
 
 // Encryption settings
@@ -287,7 +397,8 @@ program
   .name('kcli')
   .description('A Koinos blockchain command line tool')
   .version(CLI_VERSION)
-  .option('-r, --rpc <url>', 'RPC endpoint URL', DEFAULT_RPC)
+  .option('-n, --network <network>', `Network (${getSupportedNetworkNames()})`)
+  .option('-r, --rpc <url>', 'RPC endpoint URL override')
   .option('-c, --changes', 'Show latest changes and exit');
 
 program.hook('preAction', () => {
@@ -312,12 +423,15 @@ program
   .command('chain-info')
   .description('Get blockchain information')
   .action(async () => {
-    const opts = program.opts();
-    const provider = new Provider([opts.rpc]);
+    const resolved = createProviderFromOptions();
+    if (!resolved) return;
+    const { context, provider } = resolved;
     
     try {
       const headInfo = await provider.getHeadInfo();
       console.log('\n📊 Chain Info:');
+      console.log(`  Network: ${context.networkName}`);
+      console.log(`  RPC: ${context.rpc}`);
       console.log(`  Head Block: ${headInfo.head_topology?.height}`);
       console.log(`  Block ID: ${headInfo.head_topology?.id}`);
       console.log(`  Last Irreversible Block: ${headInfo.last_irreversible_block}`);
@@ -333,8 +447,9 @@ program
   .argument('<heightOrId>', 'Block height (number) or block ID (base64/hex)')
   .option('--full', 'Show full transaction details')
   .action(async (heightOrId: string, options: { full?: boolean }) => {
-    const opts = program.opts();
-    const provider = new Provider([opts.rpc]);
+    const resolved = createProviderFromOptions();
+    if (!resolved) return;
+    const { provider } = resolved;
     
     try {
       let blockId: string | undefined;
@@ -484,8 +599,9 @@ program
   .description('Get KOIN, VHP and Mana balance for an address (uses default account from config if not specified)')
   .argument('[address]', 'Koinos address (optional if default account is configured)')
   .action(async (addressArg?: string) => {
-    const opts = program.opts();
-    const provider = new Provider([opts.rpc]);
+    const resolved = createProviderFromOptions();
+    if (!resolved) return;
+    const { context, provider } = resolved;
     
     // Use provided address or fall back to config default
     const config = loadConfig();
@@ -499,20 +615,27 @@ program
     }
     
     try {
-      const koin = getSystemTokenContract(provider, KOIN_CONTRACT);
-      const vhp = getSystemTokenContract(provider, VHP_CONTRACT);
+      const koinContract = requireContract(context, 'koin', 'balance');
+      if (!koinContract) return;
+
+      const koin = getSystemTokenContract(provider, koinContract);
       
       const { result: koinResult } = await koin.functions.balance_of({ owner: address });
       const koinBalance = koinResult?.value ? utils.formatUnits(koinResult.value, 8) : '0';
-      
-      const { result: vhpResult } = await vhp.functions.balance_of({ owner: address });
-      const vhpBalance = vhpResult?.value ? utils.formatUnits(vhpResult.value, 8) : '0';
+
+      let vhpBalance = '(not configured for this network)';
+      if (context.contracts.vhp) {
+        const vhp = getSystemTokenContract(provider, context.contracts.vhp);
+        const { result: vhpResult } = await vhp.functions.balance_of({ owner: address });
+        vhpBalance = vhpResult?.value ? utils.formatUnits(vhpResult.value, 8) : '0';
+      }
       
       // Get mana (resource credits)
       const rc = await provider.getAccountRc(address);
       const mana = rc ? utils.formatUnits(rc, 8) : '0';
       
       console.log(`\n💰 Balances for ${address}:`);
+      console.log(`   Network: ${context.networkName}`);
       console.log(`   KOIN: ${koinBalance}`);
       console.log(`   VHP:  ${vhpBalance}`);
       console.log(`   Mana: ${mana}`);
@@ -533,11 +656,14 @@ program
   .description('Get VHP (Virtual Hash Power) balance for an address')
   .argument('<address>', 'Koinos address')
   .action(async (address: string) => {
-    const opts = program.opts();
-    const provider = new Provider([opts.rpc]);
+    const resolved = createProviderFromOptions();
+    if (!resolved) return;
+    const { context, provider } = resolved;
     
     try {
-      const vhp = getSystemTokenContract(provider, VHP_CONTRACT);
+      const vhpContract = requireContract(context, 'vhp', 'vhp');
+      if (!vhpContract) return;
+      const vhp = getSystemTokenContract(provider, vhpContract);
 
       const { result } = await vhp.functions.balance_of({ owner: address });
       const balance = result?.value ? utils.formatUnits(result.value, 8) : '0';
@@ -560,8 +686,9 @@ program
   .argument('<contractId>', 'Token contract address')
   .argument('<address>', 'Koinos address')
   .action(async (contractId: string, address: string) => {
-    const opts = program.opts();
-    const provider = new Provider([opts.rpc]);
+    const resolved = createProviderFromOptions();
+    if (!resolved) return;
+    const { provider } = resolved;
     
     try {
       const token = await getTokenContract(provider, contractId);
@@ -668,8 +795,9 @@ program
   .description('Get account nonce')
   .argument('<address>', 'Koinos address')
   .action(async (address: string) => {
-    const opts = program.opts();
-    const provider = new Provider([opts.rpc]);
+    const resolved = createProviderFromOptions();
+    if (!resolved) return;
+    const { provider } = resolved;
     
     try {
       const nonce = await provider.getNonce(address);
@@ -685,8 +813,9 @@ program
   .description('Get account resource credits (mana)')
   .argument('<address>', 'Koinos address')
   .action(async (address: string) => {
-    const opts = program.opts();
-    const provider = new Provider([opts.rpc]);
+    const resolved = createProviderFromOptions();
+    if (!resolved) return;
+    const { provider } = resolved;
     
     try {
       const rc = await provider.getAccountRc(address);
@@ -706,8 +835,9 @@ program
   .argument('<method>', 'Method name to call')
   .option('-a, --args <json>', 'Method arguments as JSON', '{}')
   .action(async (contractId: string, method: string, options: { args: string }) => {
-    const opts = program.opts();
-    const provider = new Provider([opts.rpc]);
+    const resolved = createProviderFromOptions();
+    if (!resolved) return;
+    const { provider } = resolved;
     
     try {
       const contract = await getTokenContract(provider, contractId);
@@ -786,8 +916,11 @@ program
   .argument('[publicKey]', 'Block producer public key in base64url format')
   .option('--dry-run', 'Show transaction details without signing or submitting')
   .action(async (producerAddressOrPublicKey: string, publicKeyArg: string | undefined, options: { dryRun?: boolean }) => {
-    const opts = program.opts();
-    const provider = new Provider([opts.rpc]);
+    const resolved = createProviderFromOptions();
+    if (!resolved) return;
+    const { context, provider } = resolved;
+    const pobContract = requireContract(context, 'pob', 'register-producer-key');
+    if (!pobContract) return;
     const config = loadConfig();
 
     // Support two forms:
@@ -871,7 +1004,7 @@ program
       signer.provider = provider;
 
       const pob = new Contract({
-        id: POB_CONTRACT,
+        id: pobContract,
         abi: pobAbi,
         provider,
         signer,
@@ -889,6 +1022,7 @@ program
 
       await transaction.pushOperation(registerKeyOp);
       await transaction.prepare();
+      if (!assertPreparedTransactionNetwork(context, transaction)) return;
 
       console.log('\n🔗 Producer Key Registration Summary:');
       console.log(`   Producer Address: ${producerAddress}`);
@@ -964,8 +1098,11 @@ program
   .description('Get the block producer public key registered to a producer address')
   .argument('[producerAddress]', 'Producer address (optional, uses main producer address from config if omitted)')
   .action(async (producerAddressArg?: string) => {
-    const opts = program.opts();
-    const provider = new Provider([opts.rpc]);
+    const resolved = createProviderFromOptions();
+    if (!resolved) return;
+    const { context, provider } = resolved;
+    const pobContract = requireContract(context, 'pob', 'get-producer-key');
+    if (!pobContract) return;
     const config = loadConfig();
 
     const producerAddress = producerAddressArg || config.mainProducerAddress;
@@ -992,7 +1129,7 @@ program
 
     try {
       const pob = new Contract({
-        id: POB_CONTRACT,
+        id: pobContract,
         abi: pobAbi,
         provider,
       });
@@ -1039,10 +1176,14 @@ program
   .option('-t, --top <count>', 'Number of producers to display', '20')
   .option('-v, --view <view>', 'Initial dashboard view: producers or peers', 'producers')
   .action(async (options: { window?: string; interval?: string; top?: string; view?: string }) => {
-    const opts = program.opts<{ rpc: string }>();
-    const provider = new Provider([opts.rpc]);
-    const koin = getSystemTokenContract(provider, KOIN_CONTRACT);
-    const vhp = getSystemTokenContract(provider, VHP_CONTRACT);
+    const resolved = createProviderFromOptions();
+    if (!resolved) return;
+    const { context, provider } = resolved;
+    const koinContract = requireContract(context, 'koin', 'producer-dashboard');
+    const vhpContract = requireContract(context, 'vhp', 'producer-dashboard');
+    if (!koinContract || !vhpContract) return;
+    const koin = getSystemTokenContract(provider, koinContract);
+    const vhp = getSystemTokenContract(provider, vhpContract);
 
     type DashboardView = 'producers' | 'peers';
     type PeerSource = 'lsof' | 'netstat';
@@ -1809,7 +1950,7 @@ program
         console.log('📊 Koinos Producer Dashboard (Ctrl+C or q to exit)');
         console.log('─'.repeat(140));
         console.log(' View: PRODUCERS | Press 1=producers 2=peers q=quit');
-        console.log(` RPC: ${opts.rpc}`);
+        console.log(` RPC: ${context.rpc}`);
         console.log(` Updated: ${now.toISOString()}`);
         console.log(` Head Block: ${headHeight}`);
         if (latestBlockTimestamp > 0) {
@@ -1910,7 +2051,7 @@ program
       console.log('📊 Koinos Producer Dashboard (Ctrl+C or q to exit)');
       console.log('─'.repeat(150));
       console.log(' View: PEERS | Press 1=producers 2=peers q=quit');
-      console.log(` RPC: ${opts.rpc}`);
+      console.log(` RPC: ${context.rpc}`);
       console.log(` Updated: ${now.toISOString()}`);
       console.log(` Active Peers: ${peers.length}`);
       console.log(` Peer Discovery Source: ${source}`);
@@ -2009,8 +2150,13 @@ program
   .option('-a, --amount <number>', 'Exact amount of KOIN to burn')
   .option('--dry-run', 'Show what would be burned without executing')
   .action(async (options: { percent?: string; amount?: string; dryRun?: boolean }) => {
-    const opts = program.opts();
-    const provider = new Provider([opts.rpc]);
+    const resolved = createProviderFromOptions();
+    if (!resolved) return;
+    const { context, provider } = resolved;
+    const koinContract = requireContract(context, 'koin', 'burn');
+    const vhpContract = requireContract(context, 'vhp', 'burn');
+    const pobContract = requireContract(context, 'pob', 'burn');
+    if (!koinContract || !vhpContract || !pobContract) return;
     
     // Check if wallet exists
     const walletFile = loadWalletFile();
@@ -2074,7 +2220,7 @@ program
       
       // Get KOIN contract
       const koin = new Contract({
-        id: KOIN_CONTRACT,
+        id: koinContract,
         abi: tokenAbi,
         provider,
         signer,
@@ -2135,7 +2281,7 @@ program
       
       // Get current VHP balance (before burn)
       const vhp = new Contract({
-        id: VHP_CONTRACT,
+        id: vhpContract,
         abi: tokenAbi,
         provider,
       });
@@ -2156,7 +2302,7 @@ program
       try {
         const { result: allowanceResult } = await koin.functions.allowance({
           owner: wallet.address,
-          spender: POB_CONTRACT,
+          spender: pobContract,
         });
         currentAllowance = allowanceResult?.value ? BigInt(allowanceResult.value) : BigInt(0);
       } catch (e: any) {
@@ -2177,7 +2323,7 @@ program
       
       // Get the PoB (Proof of Burn) contract - this is what actually converts KOIN to VHP
       const pob = new Contract({
-        id: POB_CONTRACT,
+        id: pobContract,
         abi: pobAbi,
         provider,
         signer,
@@ -2190,7 +2336,7 @@ program
       if (needsApproval) {
         const { operation: approveOp } = await koin.functions.approve({
           owner: wallet.address,
-          spender: POB_CONTRACT,
+          spender: pobContract,
           value: burnAmount.toString(),
         }, { onlyOperation: true });
         operations.push({ name: 'approve', operation: approveOp });
@@ -2220,6 +2366,7 @@ program
         await transaction.pushOperation(op.operation);
       }
       await transaction.prepare();
+      if (!assertPreparedTransactionNetwork(context, transaction)) return;
       
       // Show transaction details before signing
       console.log('\n📝 Transaction Details (BEFORE SIGNING):');
@@ -2245,11 +2392,11 @@ program
       if (needsApproval) {
         console.log(`   1. APPROVE:`);
         console.log(`       Owner: ${wallet.address}`);
-        console.log(`       Spender: ${POB_CONTRACT} (PoB Contract)`);
+        console.log(`       Spender: ${pobContract} (PoB Contract)`);
         console.log(`       Amount: ${burnFormatted} KOIN`);
       }
       console.log(`   ${needsApproval ? '2' : '1'}. BURN (via PoB Contract):`);
-      console.log(`       Contract: ${POB_CONTRACT} (Proof of Burn)`);
+      console.log(`       Contract: ${pobContract} (Proof of Burn)`);
       console.log(`       Token Amount: ${burnFormatted} KOIN`);
       console.log(`       Burn Address: ${wallet.address}`);
       console.log(`       VHP Address: ${wallet.address}`);
@@ -2330,15 +2477,49 @@ program
     }
   });
 
+// Testnet information
+program
+  .command('testnet-info')
+  .description('Show official Koinos Foundation testnet connection details')
+  .action(() => {
+    const testnet = NETWORKS.testnet;
+    console.log('\n🧪 Koinos Foundation Testnet:');
+    console.log(`   JSON-RPC: ${testnet.rpc}`);
+    console.log(`   Health: ${testnet.healthUrl}`);
+    console.log(`   Chain ID: ${testnet.chainId}`);
+    console.log(`   KOIN Contract: ${testnet.contracts.koin}`);
+    console.log(`   VHP Contract: ${testnet.contracts.vhp}`);
+    console.log(`   PoB Contract: ${testnet.contracts.pob}`);
+    console.log(`   Faucet: ${testnet.faucetUrl}`);
+    console.log('\n   Faucet command in Telegram:');
+    console.log('   /faucet YOUR_KOINOS_ADDRESS');
+    console.log('\n   Note: the testnet can reset; do not use it for production funds or durable state.');
+  });
+
+program
+  .command('faucet-info')
+  .description('Show testnet faucet instructions')
+  .action(() => {
+    const testnet = NETWORKS.testnet;
+    console.log('\n🚰 Testnet Faucet:');
+    console.log(`   Open: ${testnet.faucetUrl}`);
+    console.log('   Send: /faucet YOUR_KOINOS_ADDRESS');
+  });
+
 // Config command
 program
   .command('config')
   .description('View or set configuration options')
   .option('--default-account <address>', 'Set the default account address')
   .option('--main-producer-address <address>', 'Set the main producer address used by register-producer-key')
+  .option('--network <network>', `Set the default network (${getSupportedNetworkNames()})`)
+  .option('--rpc <url>', 'Set the default RPC endpoint URL')
   .option('--show', 'Show current configuration')
-  .action(async (options: { defaultAccount?: string; mainProducerAddress?: string; show?: boolean }) => {
+  .action(async (options: { defaultAccount?: string; mainProducerAddress?: string; network?: string; rpc?: string; show?: boolean }) => {
     const config = loadConfig();
+    const globalOpts = program.opts<{ network?: string; rpc?: string }>();
+    const networkOption = options.network || globalOpts.network;
+    const rpcOption = options.rpc || globalOpts.rpc;
     
     if (options.defaultAccount) {
       config.defaultAccount = options.defaultAccount;
@@ -2357,13 +2538,37 @@ program
       console.log(`\n✅ Main producer address set to: ${options.mainProducerAddress}`);
       return;
     }
+
+    if (networkOption) {
+      const networkName = normalizeNetworkName(networkOption);
+      if (!NETWORKS[networkName]) {
+        console.log(`\n❌ Unsupported network "${networkOption}". Supported networks: ${getSupportedNetworkNames()}`);
+        return;
+      }
+      config.network = networkName;
+      config.rpc = NETWORKS[networkName].rpc;
+      saveConfig(config);
+      console.log(`\n✅ Default network set to: ${networkName}`);
+      console.log(`   RPC: ${config.rpc || NETWORKS[networkName].rpc}`);
+      return;
+    }
+
+    if (rpcOption) {
+      config.rpc = rpcOption;
+      saveConfig(config);
+      console.log(`\n✅ Default RPC set to: ${rpcOption}`);
+      return;
+    }
     
-    if (options.show || (!options.defaultAccount && !options.mainProducerAddress)) {
+    if (options.show || (!options.defaultAccount && !options.mainProducerAddress && !networkOption && !rpcOption)) {
+      const networkName = normalizeNetworkName(config.network);
+      const network = NETWORKS[networkName];
       console.log('\n⚙️  Current Configuration:');
       console.log(`   Config file: ${CONFIG_FILE}`);
+      console.log(`   Network: ${networkName}${network ? ` (${network.label})` : ' (unsupported)'}`);
       console.log(`   Default Account: ${config.defaultAccount || '(not set)'}`);
       console.log(`   Main Producer Address: ${config.mainProducerAddress || '(not set)'}`);
-      console.log(`   RPC: ${config.rpc || DEFAULT_RPC + ' (default)'}`);
+      console.log(`   RPC: ${config.rpc || network?.rpc || DEFAULT_RPC}`);
     }
   });
 

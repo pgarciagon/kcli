@@ -1,5 +1,7 @@
 # kcli - Koinos CLI
 
+Current version: `1.2.0`
+
 A command line tool for interacting with the Koinos blockchain, built with TypeScript and koilib.
 
 ## Installation
@@ -30,7 +32,8 @@ npm run build
 
 ### Global Options
 
-- `-r, --rpc <url>` - RPC endpoint URL (default: https://api.koinos.io)
+- `-n, --network <network>` - Network to use (`mainnet` or `testnet`)
+- `-r, --rpc <url>` - RPC endpoint URL override
 - `-c, --changes` - Show latest changes and exit
 
 ### Commands
@@ -38,6 +41,7 @@ npm run build
 #### Get Chain Info
 ```bash
 kcli chain-info
+kcli --network testnet chain-info
 ```
 
 #### Get Block Content
@@ -63,6 +67,30 @@ kcli vhp <address>
 ```bash
 kcli token-balance <contractId> <address>
 ```
+
+#### Official Testnet Info
+```bash
+kcli testnet-info
+kcli faucet-info
+```
+
+Official Koinos Foundation testnet details:
+
+- JSON-RPC: `https://testnet.koinosfoundation.org/jsonrpc`
+- Health: `https://testnet.koinosfoundation.org/health`
+- Chain ID: `EiAIKVvm6-V2qmsmUvPJy09vCCLbtn9lHFpwrJbcTIEWRQ==`
+- KOIN contract: `1FaSvLjQJsCJKq5ybmGsMMQs8RQYyVv8ju`
+- VHP contract: `17n12ktwN79sR6ia9DDgCfmw77EgpbTyBi`
+- PoB contract: `1MAbK5pYkhp9yHnfhYamC3tfSLmVRTDjd9`
+- Faucet: `https://t.me/KoinosTestnetFaucetBot`
+
+To request testnet vKOIN, open the Telegram faucet and send:
+
+```txt
+/faucet YOUR_KOINOS_ADDRESS
+```
+
+The testnet can reset. Do not use it for production funds or durable production state.
 
 #### Generate New Wallet
 ```bash
@@ -168,6 +196,8 @@ kcli burn -p 95 --dry-run
 #### Config
 ```bash
 kcli config --show
+kcli config --network testnet
+kcli config --rpc https://testnet.koinosfoundation.org/jsonrpc
 kcli config --default-account <address>
 kcli config --main-producer-address <address>
 ```
@@ -182,7 +212,27 @@ Default main producer address:
 
 ```bash
 kcli --rpc http://localhost:8080 chain-info
+kcli --network testnet --rpc http://localhost:8080 chain-info
 ```
+
+### Using the Official Testnet
+
+Use the testnet for one command:
+
+```bash
+kcli --network testnet chain-info
+kcli --network testnet balance <address>
+kcli --network testnet token-balance 1FaSvLjQJsCJKq5ybmGsMMQs8RQYyVv8ju <address>
+```
+
+Or make it the default:
+
+```bash
+kcli config --network testnet
+kcli chain-info
+```
+
+`balance`, `vhp`, `burn`, producer key, and producer dashboard commands use the official testnet KOIN, VHP, and PoB contract IDs when `--network testnet` is selected.
 
 ### Show Latest Changes
 
