@@ -1,6 +1,6 @@
 # kcli - Koinos CLI
 
-Current version: `1.2.0`
+Current version: `1.3.0`
 
 A command line tool for interacting with the Koinos blockchain, built with TypeScript and koilib.
 
@@ -67,6 +67,23 @@ kcli vhp <address>
 ```bash
 kcli token-balance <contractId> <address>
 ```
+
+#### Transfer KOIN
+```bash
+kcli transfer <to> <amount>
+kcli transfer <to> <amount> --dry-run
+kcli --network testnet transfer <to> 10
+```
+
+Transfers KOIN from the encrypted wallet imported with `kcli import-wallet`. The command shows transaction details before signing and requires typing `TRANSFER` to confirm.
+
+#### Transfer Any Token (KCS-4)
+```bash
+kcli token-transfer <contractId> <to> <amount>
+kcli token-transfer <contractId> <to> <amount> --dry-run
+```
+
+Transfers any KCS-4 token from the encrypted wallet. The token contract is queried for symbol and decimals before building the transaction.
 
 #### Official Testnet Info
 ```bash

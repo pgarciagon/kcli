@@ -21,6 +21,8 @@ const program = new Command();
 const CLI_VERSION = packageJson.version;
 
 const LATEST_CHANGES = [
+  'Added transfer and token-transfer commands with dry-run support.',
+  'Added official Koinos Foundation testnet support.',
   'producer-dashboard now paginates block fetches so --window can scan more than 1000 blocks.',
   'producer-dashboard now has a peers view with active peer IPs, geolocation, ping, and role heuristics.',
   'producer-dashboard now detects Fogata pools dynamically via get_pool_params and shows pool name.',
@@ -209,6 +211,52 @@ function assertPreparedTransactionNetwork(context: NetworkContext, transaction: 
   console.log(`   Actual:   ${actualChainId || '(missing)'}`);
   console.log('   Refusing to sign or submit this transaction.');
   return false;
+}
+
+function isValidAddress(address: string): boolean {
+  try {
+    return utils.isChecksumAddress(address);
+  } catch (error) {
+    return false;
+  }
+}
+
+function parseTokenAmount(amount: string, decimals: number): bigint {
+  const trimmed = amount.trim();
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) {
+    throw new Error('Amount must be a positive decimal number.');
+  }
+
+  const [wholePart, fractionalPart = ''] = trimmed.split('.');
+  if (fractionalPart.length > decimals) {
+    throw new Error(`Amount has too many decimal places. This token supports ${decimals} decimals.`);
+  }
+
+  const paddedFractional = fractionalPart.padEnd(decimals, '0');
+  const raw = BigInt(wholePart || '0') * (BigInt(10) ** BigInt(decimals)) + BigInt(paddedFractional || '0');
+
+  if (raw <= BigInt(0)) {
+    throw new Error('Amount must be greater than zero.');
+  }
+
+  return raw;
+}
+
+function getReceiptErrorDetails(error: any): string[] {
+  const details: string[] = [];
+  if (error.message) {
+    details.push(`   Message: ${error.message}`);
+  }
+  if (error.code) {
+    details.push(`   Code: ${error.code}`);
+  }
+  if (error.logs && error.logs.length > 0) {
+    details.push(`   Logs: ${JSON.stringify(error.logs)}`);
+  }
+  if (error.receipt) {
+    details.push(`   Receipt: ${JSON.stringify(error.receipt, null, 2)}`);
+  }
+  return details;
 }
 
 // Encryption settings
@@ -713,6 +761,228 @@ program
     } catch (error) {
       console.error('Error fetching token balance:', error);
     }
+  });
+
+async function executeTokenTransfer(
+  context: NetworkContext,
+  provider: Provider,
+  contractId: string,
+  to: string,
+  amount: string,
+  options: { dryRun?: boolean },
+): Promise<void> {
+  if (!isValidAddress(to)) {
+    console.log('\n❌ Invalid recipient address format.');
+    return;
+  }
+
+  const walletFile = loadWalletFile();
+  if (!walletFile) {
+    console.log('\n❌ No wallet found. Import one first with: kcli import-wallet <privateKey>');
+    return;
+  }
+
+  console.log(`\n🔐 Unlocking wallet for address: ${walletFile.address}`);
+  const password = promptPassword('Enter wallet password: ');
+
+  let wallet;
+  try {
+    wallet = loadWallet(password);
+    if (!wallet) {
+      console.error('❌ Failed to load wallet.');
+      return;
+    }
+  } catch (error: any) {
+    console.error('❌ Invalid password. Please try again.');
+    return;
+  }
+
+  try {
+    const signer = Signer.fromWif(wallet.privateKey);
+    signer.provider = provider;
+
+    const token = new Contract({
+      id: contractId,
+      abi: tokenAbi,
+      provider,
+      signer,
+    });
+
+    const readOptional = async <T>(promise: Promise<T>): Promise<T | undefined> => {
+      try {
+        return await promise;
+      } catch {
+        return undefined;
+      }
+    };
+
+    const [nameResult, symbolResult, decimalsResult, balanceResult] = await Promise.all([
+      readOptional(token.functions.name({})),
+      readOptional(token.functions.symbol({})),
+      readOptional(token.functions.decimals({})),
+      token.functions.balance_of({ owner: wallet.address }),
+    ]);
+
+    const isConfiguredKoin = contractId === context.contracts.koin;
+    const tokenName = nameResult?.result?.value || (isConfiguredKoin ? 'KOIN' : 'Token');
+    const tokenSymbol = symbolResult?.result?.value || (isConfiguredKoin ? 'KOIN' : 'TOKEN');
+    const decimals = Number(decimalsResult?.result?.value ?? 8);
+    const transferAmount = parseTokenAmount(amount, decimals);
+    const currentBalance = balanceResult.result?.value ? BigInt(balanceResult.result.value) : BigInt(0);
+    const currentFormatted = utils.formatUnits(currentBalance.toString(), decimals);
+    const transferFormatted = utils.formatUnits(transferAmount.toString(), decimals);
+
+    if (transferAmount > currentBalance) {
+      console.log('\n❌ Insufficient token balance.');
+      console.log(`   Requested: ${transferFormatted} ${tokenSymbol}`);
+      console.log(`   Available: ${currentFormatted} ${tokenSymbol}`);
+      return;
+    }
+
+    const availableMana = await provider.getAccountRc(wallet.address);
+    const manaValue = availableMana ? BigInt(availableMana) : BigInt(0);
+    const manaFormatted = utils.formatUnits(manaValue.toString(), 8);
+    const estimatedManaNeeded = BigInt(20000000); // ~0.2 mana should be enough for a simple token transfer
+
+    if (manaValue < estimatedManaNeeded) {
+      console.log('\n❌ Insufficient mana to execute transaction.');
+      console.log(`   Available Mana: ${manaFormatted}`);
+      console.log('   Estimated Needed: ~0.2');
+      console.log('\n   💡 Mana regenerates over time based on your KOIN balance.');
+      return;
+    }
+
+    const { operation: transferOp } = await token.functions.transfer({
+      from: wallet.address,
+      to,
+      value: transferAmount.toString(),
+    }, { onlyOperation: true });
+
+    const rcLimit = (manaValue * BigInt(10)) / BigInt(100);
+    const transaction = new Transaction({
+      signer,
+      provider,
+      options: {
+        rcLimit: rcLimit.toString(),
+      },
+    });
+
+    await transaction.pushOperation(transferOp);
+    await transaction.prepare();
+    if (!assertPreparedTransactionNetwork(context, transaction)) return;
+
+    console.log('\n💸 Transfer Summary:');
+    console.log(`   Network: ${context.networkName}`);
+    console.log(`   Token: ${tokenName} (${tokenSymbol})`);
+    console.log(`   Contract: ${contractId}`);
+    console.log(`   From: ${wallet.address}`);
+    console.log(`   To: ${to}`);
+    console.log(`   Amount: ${transferFormatted} ${tokenSymbol}`);
+    console.log(`   Current Balance: ${currentFormatted} ${tokenSymbol}`);
+    console.log(`   Available Mana: ${manaFormatted}`);
+
+    console.log('\n📝 Transaction Details (BEFORE SIGNING):');
+    console.log('─'.repeat(50));
+    console.log(`   Transaction ID: ${transaction.transaction.id}`);
+    console.log(`   Payer: ${transaction.transaction.header?.payer}`);
+    console.log(`   Nonce: ${transaction.transaction.header?.nonce}`);
+    console.log(`   RC Limit: ${transaction.transaction.header?.rc_limit}`);
+    console.log(`   Chain ID: ${transaction.transaction.header?.chain_id}`);
+    console.log(`   Contract: ${transferOp.call_contract?.contract_id}`);
+    console.log(`   Entry Point: ${transferOp.call_contract?.entry_point}`);
+    console.log(`   Args (base64): ${transferOp.call_contract?.args}`);
+    console.log('─'.repeat(50));
+
+    if (options.dryRun) {
+      console.log('\n📋 Dry run - transaction NOT signed or submitted.');
+      return;
+    }
+
+    const confirm = readlineSync.question('\n⚠️  Type "TRANSFER" to confirm and sign: ');
+    if (confirm !== 'TRANSFER') {
+      console.log('\n❌ Transaction cancelled.');
+      return;
+    }
+
+    console.log('\n   Signing and submitting transaction...\n');
+    await transaction.sign();
+    const receipt = await transaction.send();
+
+    console.log('✅ Transfer transaction submitted!');
+    console.log(`   Transaction ID: ${transaction.transaction.id}`);
+
+    if (receipt) {
+      if (receipt.logs && receipt.logs.length > 0) {
+        console.log('   Logs:', receipt.logs);
+      }
+      if (receipt.events && receipt.events.length > 0) {
+        console.log(`   Events: ${receipt.events.length} event(s)`);
+      }
+    }
+
+    console.log('\n⏳ Waiting for transaction to be included in a block...');
+    try {
+      const blockInfo = await transaction.wait('byTransactionId', 60000);
+      console.log(`   ✅ Transaction confirmed in block ${blockInfo?.blockNumber || 'unknown'}`);
+    } catch (waitError: any) {
+      console.log('   ⚠️  Could not confirm transaction (timeout). Balances may not be updated yet.');
+    }
+
+    const { result: newSenderBalanceResult } = await token.functions.balance_of({ owner: wallet.address });
+    const { result: newRecipientBalanceResult } = await token.functions.balance_of({ owner: to });
+    const newSenderBalance = newSenderBalanceResult?.value ? utils.formatUnits(newSenderBalanceResult.value, decimals) : '0';
+    const newRecipientBalance = newRecipientBalanceResult?.value ? utils.formatUnits(newRecipientBalanceResult.value, decimals) : '0';
+
+    console.log('\n📊 Updated Balances:');
+    console.log(`   Sender:    ${newSenderBalance} ${tokenSymbol}`);
+    console.log(`   Recipient: ${newRecipientBalance} ${tokenSymbol}`);
+  } catch (error: any) {
+    console.error('\n❌ Error transferring tokens:');
+    const details = getReceiptErrorDetails(error);
+    if (details.length) {
+      details.forEach((detail) => console.error(detail));
+    } else {
+      console.error(`   ${error}`);
+    }
+  }
+}
+
+// Transfer KOIN
+program
+  .command('transfer')
+  .description('Transfer KOIN to another address')
+  .argument('<to>', 'Recipient Koinos address')
+  .argument('<amount>', 'Amount of KOIN to transfer')
+  .option('--dry-run', 'Show transaction details without signing or submitting')
+  .action(async (to: string, amount: string, options: { dryRun?: boolean }) => {
+    const resolved = createProviderFromOptions();
+    if (!resolved) return;
+    const { context, provider } = resolved;
+    const koinContract = requireContract(context, 'koin', 'transfer');
+    if (!koinContract) return;
+
+    await executeTokenTransfer(context, provider, koinContract, to, amount, options);
+  });
+
+// Transfer any KCS-4 token
+program
+  .command('token-transfer')
+  .description('Transfer any KCS-4 token to another address')
+  .argument('<contractId>', 'Token contract address')
+  .argument('<to>', 'Recipient Koinos address')
+  .argument('<amount>', 'Token amount to transfer')
+  .option('--dry-run', 'Show transaction details without signing or submitting')
+  .action(async (contractId: string, to: string, amount: string, options: { dryRun?: boolean }) => {
+    const resolved = createProviderFromOptions();
+    if (!resolved) return;
+    const { context, provider } = resolved;
+
+    if (!isValidAddress(contractId)) {
+      console.log('\n❌ Invalid token contract address format.');
+      return;
+    }
+
+    await executeTokenTransfer(context, provider, contractId, to, amount, options);
   });
 
 // Generate new wallet
