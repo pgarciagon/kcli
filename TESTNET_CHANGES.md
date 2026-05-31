@@ -2,7 +2,7 @@
 
 ## Resumen
 
-Se actualizo `kcli` para poder trabajar con la testnet oficial de Koinos Foundation, se agregaron comandos de transferencia, se subio la version a `1.3.0`, se compilo e instalo localmente, y se publico el cambio inicial en GitHub.
+Se actualizo `kcli` para poder trabajar con la testnet oficial de Koinos Foundation, se agregaron comandos de transferencia, se agrego soporte para automatizacion no interactiva, se subio la version a `1.4.0`, se compilo e instalo localmente, y se publico el cambio inicial en GitHub.
 
 Repositorio remoto:
 
@@ -92,7 +92,7 @@ Tambien se agrego una comprobacion de `chain_id` antes de firmar transacciones c
 Se actualizo la version del proyecto:
 
 ```txt
-1.1.0 -> 1.2.0 -> 1.3.0
+1.1.0 -> 1.2.0 -> 1.3.0 -> 1.4.0
 ```
 
 Archivos actualizados:
@@ -112,7 +112,7 @@ kcli --version
 Resultado:
 
 ```txt
-1.3.0
+1.4.0
 ```
 
 ## Transferencias
@@ -130,6 +130,23 @@ Ejemplo en testnet:
 
 ```bash
 kcli --network testnet transfer <to> 10
+```
+
+## Automatizacion no interactiva
+
+Se agrego soporte para leer la password de la wallet desde un archivo local y saltar la confirmacion manual:
+
+```bash
+kcli transfer <to> <amount> --password-file ~/.kcli/wallet-password.txt --yes
+kcli token-transfer <contractId> <to> <amount> --password-file ~/.kcli/wallet-password.txt --yes
+kcli burn -a 10 --password-file ~/.kcli/wallet-password.txt --yes
+kcli register-producer-key <producerAddress> <publicKey> --password-file ~/.kcli/wallet-password.txt --yes
+```
+
+El archivo de password debe ser un archivo regular y, en macOS/Linux, no puede ser legible por grupo u otros usuarios. Por ejemplo:
+
+```bash
+chmod 600 ~/.kcli/wallet-password.txt
 ```
 
 ## Instalacion local
@@ -154,7 +171,7 @@ Ese enlace apuntaba a un checkout antiguo y seguia mostrando `1.1.0`. Se repunto
 npm_config_prefix=/opt/homebrew npm link
 ```
 
-Despues de eso, ambos comandos reportaban `1.2.0`:
+Despues de eso, ambos comandos reportaban la version actual:
 
 ```txt
 /opt/homebrew/bin/kcli --version

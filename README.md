@@ -1,6 +1,6 @@
 # kcli - Koinos CLI
 
-Current version: `1.3.0`
+Current version: `1.4.0`
 
 A command line tool for interacting with the Koinos blockchain, built with TypeScript and koilib.
 
@@ -72,15 +72,18 @@ kcli token-balance <contractId> <address>
 ```bash
 kcli transfer <to> <amount>
 kcli transfer <to> <amount> --dry-run
+kcli transfer <to> <amount> --password-file ~/.kcli/wallet-password.txt --yes
 kcli --network testnet transfer <to> 10
 ```
 
 Transfers KOIN from the encrypted wallet imported with `kcli import-wallet`. The command shows transaction details before signing and requires typing `TRANSFER` to confirm.
+Use `--password-file <path>` with a local `0600` file for non-interactive automation, and `--yes` only when you intentionally want to skip the confirmation prompt.
 
 #### Transfer Any Token (KCS-4)
 ```bash
 kcli token-transfer <contractId> <to> <amount>
 kcli token-transfer <contractId> <to> <amount> --dry-run
+kcli token-transfer <contractId> <to> <amount> --password-file ~/.kcli/wallet-password.txt --yes
 ```
 
 Transfers any KCS-4 token from the encrypted wallet. The token contract is queried for symbol and decimals before building the transaction.
@@ -161,6 +164,7 @@ kcli register-producer-key <producerAddress> <publicKey>
 kcli register-producer-key <publicKey>  # Uses configured main producer address
 kcli register-producer-key 14MHW6TF8gw8EuMRLCJc2PQHLzZLKuwGqb Aq4Ps_Ch-f8OZDnpQOov2SiMvdYyA5tn0oWa36QWnTeH
 kcli register-producer-key <producerAddress> <publicKey> --dry-run
+kcli register-producer-key <producerAddress> <publicKey> --password-file ~/.kcli/wallet-password.txt --yes
 ```
 
 This command sends a transaction to the Proof-of-Burn contract (`159myq5YUhhoVWu3wsHKHiJYKPKGUrGiyv`) and calls `register_public_key`.
@@ -168,6 +172,8 @@ This command sends a transaction to the Proof-of-Burn contract (`159myq5YUhhoVWu
 - `producerAddress`: address that will produce blocks
 - `publicKey`: block producer public key in base64url format (typically from `$KOINOS_BASEDIR/block_producer/public.key`)
 - `--dry-run`: prepare and display the transaction without sending it
+- `--password-file <path>`: read the wallet password from a local `0600` file
+- `--yes`: skip the confirmation prompt
 
 If the producer address is omitted, `kcli` uses `mainProducerAddress` from `~/.kcli/config.json`.
 
@@ -208,6 +214,7 @@ Shows a live text-based dashboard with two views: `producers` and `peers`.
 kcli burn -p 95        # Burn 95% of KOIN balance
 kcli burn -a 10        # Burn exactly 10 KOIN
 kcli burn -p 95 --dry-run
+kcli burn -a 10 --password-file ~/.kcli/wallet-password.txt --yes
 ```
 
 #### Config

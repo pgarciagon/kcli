@@ -21,6 +21,7 @@ const program = new Command();
 const CLI_VERSION = packageJson.version;
 
 const LATEST_CHANGES = [
+  'Added --password-file and --yes for non-interactive wallet operations.',
   'Added transfer and token-transfer commands with dry-run support.',
   'Added official Koinos Foundation testnet support.',
   'producer-dashboard now paginates block fetches so --window can scan more than 1000 blocks.',
@@ -113,6 +114,14 @@ interface NetworkContext {
   definition: NetworkDefinition;
   rpc: string;
   contracts: NetworkContracts;
+}
+
+interface WalletUnlockOptions {
+  passwordFile?: string;
+}
+
+interface ConfirmationOptions {
+  yes?: boolean;
 }
 
 // Load config file
@@ -310,6 +319,37 @@ function decrypt(encryptedData: { encrypted: string; salt: string; iv: string; a
 // Prompt for password (hidden input)
 function promptPassword(prompt: string = 'Enter password: '): string {
   return readlineSync.question(prompt, { hideEchoBack: true });
+}
+
+function expandHome(inputPath: string): string {
+  if (inputPath === '~') return os.homedir();
+  if (inputPath.startsWith('~/')) {
+    return path.join(os.homedir(), inputPath.slice(2));
+  }
+  return inputPath;
+}
+
+function readPasswordFile(passwordFile: string): string {
+  const resolvedPath = path.resolve(expandHome(passwordFile));
+  const stat = fs.statSync(resolvedPath);
+  if (!stat.isFile()) {
+    throw new Error(`Password file is not a regular file: ${resolvedPath}`);
+  }
+  if (process.platform !== 'win32' && (stat.mode & 0o077) !== 0) {
+    throw new Error(`Password file must not be readable by group or others: ${resolvedPath}`);
+  }
+  const password = fs.readFileSync(resolvedPath, 'utf8').replace(/\r?\n$/, '');
+  if (!password) {
+    throw new Error(`Password file is empty: ${resolvedPath}`);
+  }
+  return password;
+}
+
+function getWalletPassword(options: WalletUnlockOptions, prompt: string = 'Enter wallet password: '): string {
+  if (options.passwordFile) {
+    return readPasswordFile(options.passwordFile);
+  }
+  return promptPassword(prompt);
 }
 
 // Prompt for password with confirmation
@@ -769,7 +809,7 @@ async function executeTokenTransfer(
   contractId: string,
   to: string,
   amount: string,
-  options: { dryRun?: boolean },
+  options: { dryRun?: boolean } & WalletUnlockOptions & ConfirmationOptions,
 ): Promise<void> {
   if (!isValidAddress(to)) {
     console.log('\n❌ Invalid recipient address format.');
@@ -783,7 +823,13 @@ async function executeTokenTransfer(
   }
 
   console.log(`\n🔐 Unlocking wallet for address: ${walletFile.address}`);
-  const password = promptPassword('Enter wallet password: ');
+  let password: string;
+  try {
+    password = getWalletPassword(options);
+  } catch (error: any) {
+    console.error(`❌ ${error.message}`);
+    return;
+  }
 
   let wallet;
   try {
@@ -898,10 +944,12 @@ async function executeTokenTransfer(
       return;
     }
 
-    const confirm = readlineSync.question('\n⚠️  Type "TRANSFER" to confirm and sign: ');
-    if (confirm !== 'TRANSFER') {
-      console.log('\n❌ Transaction cancelled.');
-      return;
+    if (!options.yes) {
+      const confirm = readlineSync.question('\n⚠️  Type "TRANSFER" to confirm and sign: ');
+      if (confirm !== 'TRANSFER') {
+        console.log('\n❌ Transaction cancelled.');
+        return;
+      }
     }
 
     console.log('\n   Signing and submitting transaction...\n');
@@ -954,7 +1002,9 @@ program
   .argument('<to>', 'Recipient Koinos address')
   .argument('<amount>', 'Amount of KOIN to transfer')
   .option('--dry-run', 'Show transaction details without signing or submitting')
-  .action(async (to: string, amount: string, options: { dryRun?: boolean }) => {
+  .option('--password-file <path>', 'Read wallet password from a local 0600 file')
+  .option('-y, --yes', 'Skip confirmation prompt')
+  .action(async (to: string, amount: string, options: { dryRun?: boolean } & WalletUnlockOptions & ConfirmationOptions) => {
     const resolved = createProviderFromOptions();
     if (!resolved) return;
     const { context, provider } = resolved;
@@ -972,7 +1022,9 @@ program
   .argument('<to>', 'Recipient Koinos address')
   .argument('<amount>', 'Token amount to transfer')
   .option('--dry-run', 'Show transaction details without signing or submitting')
-  .action(async (contractId: string, to: string, amount: string, options: { dryRun?: boolean }) => {
+  .option('--password-file <path>', 'Read wallet password from a local 0600 file')
+  .option('-y, --yes', 'Skip confirmation prompt')
+  .action(async (contractId: string, to: string, amount: string, options: { dryRun?: boolean } & WalletUnlockOptions & ConfirmationOptions) => {
     const resolved = createProviderFromOptions();
     if (!resolved) return;
     const { context, provider } = resolved;
@@ -1185,7 +1237,9 @@ program
   .argument('<producerAddressOrPublicKey>', 'Producer address or public key (if main producer address is configured)')
   .argument('[publicKey]', 'Block producer public key in base64url format')
   .option('--dry-run', 'Show transaction details without signing or submitting')
-  .action(async (producerAddressOrPublicKey: string, publicKeyArg: string | undefined, options: { dryRun?: boolean }) => {
+  .option('--password-file <path>', 'Read wallet password from a local 0600 file')
+  .option('-y, --yes', 'Skip confirmation prompt')
+  .action(async (producerAddressOrPublicKey: string, publicKeyArg: string | undefined, options: { dryRun?: boolean } & WalletUnlockOptions & ConfirmationOptions) => {
     const resolved = createProviderFromOptions();
     if (!resolved) return;
     const { context, provider } = resolved;
@@ -1248,7 +1302,13 @@ program
 
     // Prompt for password to unlock wallet
     console.log(`\n🔐 Unlocking wallet for address: ${walletFile.address}`);
-    const password = promptPassword('Enter wallet password: ');
+    let password: string;
+    try {
+      password = getWalletPassword(options);
+    } catch (error: any) {
+      console.error(`❌ ${error.message}`);
+      return;
+    }
 
     let wallet;
     try {
@@ -1316,10 +1376,12 @@ program
         return;
       }
 
-      const confirm = readlineSync.question('\n⚠️  Type "REGISTER" to confirm and sign: ');
-      if (confirm !== 'REGISTER') {
-        console.log('\n❌ Transaction cancelled.');
-        return;
+      if (!options.yes) {
+        const confirm = readlineSync.question('\n⚠️  Type "REGISTER" to confirm and sign: ');
+        if (confirm !== 'REGISTER') {
+          console.log('\n❌ Transaction cancelled.');
+          return;
+        }
       }
 
       console.log('\n   Signing and submitting transaction...\n');
@@ -2419,7 +2481,9 @@ program
   .option('-p, --percent <number>', 'Percentage of KOIN to burn')
   .option('-a, --amount <number>', 'Exact amount of KOIN to burn')
   .option('--dry-run', 'Show what would be burned without executing')
-  .action(async (options: { percent?: string; amount?: string; dryRun?: boolean }) => {
+  .option('--password-file <path>', 'Read wallet password from a local 0600 file')
+  .option('-y, --yes', 'Skip confirmation prompt')
+  .action(async (options: { percent?: string; amount?: string; dryRun?: boolean } & WalletUnlockOptions & ConfirmationOptions) => {
     const resolved = createProviderFromOptions();
     if (!resolved) return;
     const { context, provider } = resolved;
@@ -2470,7 +2534,13 @@ program
     
     // Prompt for password to unlock wallet
     console.log(`\n🔐 Unlocking wallet for address: ${walletFile.address}`);
-    const password = promptPassword('Enter wallet password: ');
+    let password: string;
+    try {
+      password = getWalletPassword(options);
+    } catch (error: any) {
+      console.error(`❌ ${error.message}`);
+      return;
+    }
     
     let wallet;
     try {
@@ -2677,13 +2747,15 @@ program
         return;
       }
       
-      // Confirm with user
-      console.log('\n⚠️  This action is IRREVERSIBLE!');
-      const confirm = readlineSync.question('   Type "BURN" to confirm and sign: ');
-      
-      if (confirm !== 'BURN') {
-        console.log('\n❌ Transaction cancelled.');
-        return;
+      if (!options.yes) {
+        // Confirm with user
+        console.log('\n⚠️  This action is IRREVERSIBLE!');
+        const confirm = readlineSync.question('   Type "BURN" to confirm and sign: ');
+
+        if (confirm !== 'BURN') {
+          console.log('\n❌ Transaction cancelled.');
+          return;
+        }
       }
       
       console.log('\n   Signing and submitting transaction...\n');
