@@ -1,0 +1,127 @@
+{
+  "schema": 1,
+  "runId": "kcli-vortex-20261004-96c1c63696",
+  "upstream": "42b0ab20653047ec0275c3130accf9210ce4b822",
+  "syntheticOnly": true,
+  "publicChainUsed": false,
+  "independentCustody": false,
+  "minimumDelayMs": "172800000",
+  "build": {
+    "codeSha256": "d66facf63456ff6b2690d7e6756142008b11d985886d8ce10411864eb6992a49",
+    "abiSha256": "0810d36e1130a34a8ebfc16a2bb73f58cc00a65dd102fd7a2516017b619ee234",
+    "sourceSha256": "aeaf0281e986505f400ed24e83a8cc49e193d16e03c13057b828ccfd93070411",
+    "variant": "fresh-initializer",
+    "adapterSha256": "9f999b2b4561af7062247a6bf47a47790f0c5d9cabdf548788651955136dcd72"
+  },
+  "results": [
+    {
+      "name": "installed named wallets created with hidden input and no secret output",
+      "passed": true
+    },
+    {
+      "name": "actual V2 fresh initialization and immutable binding validated",
+      "passed": true
+    },
+    {
+      "name": "fresh-chain setup obeyed full 48-hour delay without shortening contract constant",
+      "passed": true
+    },
+    {
+      "name": "actual contract rejects one admin plus fee payer",
+      "passed": true
+    },
+    {
+      "name": "installed independent signing and merging succeeds with RPC unavailable",
+      "passed": true
+    },
+    {
+      "name": "installed CLI proposes unpause and verifies irreversible resulting state",
+      "passed": true,
+      "transactionId": "0x1220659534310f20f1ed60de6536e98e7696a26487fce8ebdeb897153be845f910ea",
+      "blockId": "0x122005b86fd469cc2850cd36138daca8ebd9594c8e77fab1252f0b93ca850f28596a",
+      "height": "436",
+      "resultingStateSha256": "14d93201cd8a794a785303295ab407696e979001c854e8d727d5bc58f4991d88",
+      "stateVerified": true,
+      "irreversible": true
+    },
+    {
+      "name": "CLI and actual contract both reject execution before delay",
+      "passed": true
+    },
+    {
+      "name": "installed sequential signing executes delayed unpause and verifies finality",
+      "passed": true,
+      "transactionId": "0x1220596e73d35cfbad11b6a5921fea4f7e8592a1e608a0e0eeab79049bcaf4c5cc4b",
+      "blockId": "0x12206b69b80eedba8dddc36cb8ba1e58fa01f29ea7053626c37196c3663bf60e6df0",
+      "height": "560",
+      "resultingStateSha256": "b4e2763e10ca4922ff535339bcd26b960eb9044f72d20c157975b18c45f9a0a1",
+      "stateVerified": true,
+      "irreversible": true
+    },
+    {
+      "name": "immediate administrator pause verified irreversibly",
+      "passed": true,
+      "transactionId": "0x1220ebfb5d488258b58286080922c0e7bcaad4057fe7c0b33895ad16f38ef58b069b",
+      "blockId": "0x122035705a9a95578a89c1681058267b46c382b6897ac63ae04646ba133252d8159a",
+      "height": "622",
+      "resultingStateSha256": "57a77925d427fa6451f76f8bb3627410820d305f284eabab2742bd20d57c9d26",
+      "stateVerified": true,
+      "irreversible": true
+    },
+    {
+      "name": "recovery CLI and actual contract require 3-of-3 rather than admin quorum",
+      "passed": true
+    },
+    {
+      "name": "installed 3-of-3 recovery proposal verified irreversibly",
+      "passed": true,
+      "transactionId": "0x1220072b2394e170535e50c5df161f098382fbda1ff086aa53c723a124f2b2070100",
+      "blockId": "0x1220f1757da8d7d7166c4013c6b8e2b4a0eb0da280c0dc520acab6e3cbdd93ab58d8",
+      "height": "684",
+      "resultingStateSha256": "c21528f2994e4944929a97c99202757c755644e9e420fd1260a5dc5ed2286eb2",
+      "stateVerified": true,
+      "irreversible": true
+    },
+    {
+      "name": "actual recovery execution rejects early 3-of-3 transaction",
+      "passed": true
+    },
+    {
+      "name": "actual recovery execution rejects 2 admins even after delay",
+      "passed": true
+    },
+    {
+      "name": "installed recovery replaces exact validators and verifies irreversible state",
+      "passed": true,
+      "transactionId": "0x1220ef2c25ad97dd22664ef7bc9ba3ccdf28de71a21a0f694284df5fa2621ddea7a1",
+      "blockId": "0x1220541d7ff5156fe48b7a8511c9a3e2e3403c1333d88a12bae742e6d5bc49e14520",
+      "height": "808",
+      "resultingStateSha256": "d0d117efd600a8975174c93a4ab88f8d8bfd35fceee7c3a191299f7df9554d03",
+      "stateVerified": true,
+      "irreversible": true
+    },
+    {
+      "name": "contract rejects replay of previously included transaction",
+      "passed": true
+    },
+    {
+      "name": "installed administrator cancellation consumes the exact ordinary proposal",
+      "passed": true,
+      "transactionId": "0x122022910d52b49671c14ee445847aa1337313a4ffccc2a7ee7ebcdf830c3fb4239b",
+      "blockId": "0x12209b5a99607b394201fbbd79dd263dd479425af8bc0cf2502febb7bf430d262935",
+      "height": "932",
+      "resultingStateSha256": "1f0c444b2785b011d688a12c7b057bf37ba78c1786b151a2f0491ae270c61fe9",
+      "stateVerified": true,
+      "irreversible": true
+    },
+    {
+      "name": "CLI and actual contract refuse expired execution without resetting the delay",
+      "passed": true
+    },
+    {
+      "name": "source and both installed paths expose the same commands/version",
+      "passed": true
+    }
+  ],
+  "error": null
+}

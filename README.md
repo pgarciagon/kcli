@@ -1,6 +1,6 @@
 # kcli - Koinos CLI
 
-Current version: `1.4.0`
+Current version: `1.5.0`
 
 A command line tool for interacting with the Koinos blockchain, built with TypeScript and koilib.
 
@@ -21,6 +21,21 @@ npm run dev -- <command>
 # or after linking:
 kcli <command>
 ```
+
+Run the focused wallet/Vortex tests:
+
+```bash
+npm test
+```
+
+Vortex V2 local administration is available from source, not a tagged release. Named
+encrypted wallets and detached-signing commands are described in the
+[CLI administrator guide](VORTEX_ADMINISTRATOR_GUIDE.md); the
+[implementation status](VORTEX_IMPLEMENTATION_STATUS.md) distinguishes tests
+from actual contract execution. These workflows do not use Kondor or a custom
+administration website and do not modify the existing default wallet/config.
+The opt-in fresh-chain exercise is documented separately; `npm test` does not
+start Docker or operate a public chain. Public-chain Vortex use is disabled.
 
 ## Build
 

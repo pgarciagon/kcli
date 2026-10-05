@@ -16,11 +16,14 @@ import tokenAbi from './abis/token.json';
 import pobAbi from './abis/pob.json';
 import fogataAbi from './abis/fogata.json';
 import packageJson from '../package.json';
+import { registerVortexCommands } from './vortex-cli';
 
 const program = new Command();
 const CLI_VERSION = packageJson.version;
 
 const LATEST_CHANGES = [
+  'Added named encrypted wallets with hidden local secret input.',
+  'Added local-only Vortex V2 detached signing, separate payer, submission and reconciliation.',
   'Added --password-file and --yes for non-interactive wallet operations.',
   'Added transfer and token-transfer commands with dry-run support.',
   'Added official Koinos Foundation testnet support.',
@@ -2914,4 +2917,5 @@ program
     }
   });
 
+registerVortexCommands(program);
 program.parse();
