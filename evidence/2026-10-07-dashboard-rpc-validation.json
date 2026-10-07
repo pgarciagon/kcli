@@ -1,0 +1,95 @@
+{
+  "date": "2026-10-07",
+  "version": "1.6.0",
+  "readOnly": true,
+  "fullCheckoutTestsPassed": 94,
+  "dashboardTestsPassed": 25,
+  "transportTest": {
+    "reads": 16,
+    "connections": 2,
+    "maxSimultaneousRequests": 2,
+    "peakOpenSockets": 2,
+    "errors": 0,
+    "openSocketsAfterIdleTimeout": 0
+  },
+  "simulatedFourSessionComparison": {
+    "durationMsPerVersion": 27000,
+    "screenIntervalMs": 5000,
+    "window": 12,
+    "visibleProducers": 4,
+    "before": {
+      "rpcCalls": 76,
+      "contractReads": 64,
+      "headReads": 6,
+      "blockWindowReads": 6,
+      "sessionLimitErrors": 26,
+      "peakOpenSocketsIncludingRefusedConnections": 8,
+      "totalConnections": 33
+    },
+    "after": {
+      "rpcCalls": 27,
+      "contractReads": 14,
+      "chainIdReads": 1,
+      "headReads": 6,
+      "blockWindowReads": 6,
+      "sessionLimitErrors": 0,
+      "peakOpenSockets": 1,
+      "totalConnections": 6
+    },
+    "contractReadReductionPercent": 78.13,
+    "totalReadReductionPercent": 64.47
+  },
+  "liveDirectSnapshot": {
+    "durationMs": 12000,
+    "screens": 3,
+    "screensWithActivity": 2,
+    "lastRenderedCounters": {
+      "attempts": 12,
+      "errors": 0,
+      "retries": 0,
+      "maxActiveRequests": 2,
+      "maxSockets": 2
+    }
+  },
+  "liveProtectedComparison": {
+    "durationMsPerVersion": 27000,
+    "backendSocketLimit": 2,
+    "strictThreeSecondPreflightTimeouts": 2,
+    "completedComparisonAttemptTimeoutMs": 10000,
+    "before": {
+      "rpcCalls": 21,
+      "contractReads": 17,
+      "headReads": 2,
+      "blockWindowReads": 2,
+      "backendReadFailures": 4,
+      "maxBackendSockets": 2,
+      "screensWithUpdatedTimestamp": 0
+    },
+    "after": {
+      "rpcCalls": 31,
+      "contractReads": 21,
+      "headReads": 5,
+      "blockWindowReads": 4,
+      "backendReadFailures": 4,
+      "maxBackendSockets": 2,
+      "screens": 6,
+      "warningScreens": 1
+    },
+    "equivalentSuccessfulWorkload": false,
+    "callReductionPercent": null,
+    "limitations": [
+      "Latency and read failures produced different activity-round counts.",
+      "The relay protects Teleno with two sockets even for the old dashboard.",
+      "The initial frame counter excluded old failure screens; it was corrected after this observation.",
+      "No live reduction or cause for generic backend read failures is established."
+    ]
+  },
+  "safety": {
+    "realWalletAccess": false,
+    "realSignaturesOrTransactions": false,
+    "telenoLimitOrServiceChanges": false,
+    "otherClientConnectionsOperated": false,
+    "configurationChanged": false,
+    "commitPushOrPublication": false
+  }
+}

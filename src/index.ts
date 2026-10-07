@@ -14,14 +14,16 @@ import { execSync } from 'child_process';
 import { ethers } from 'ethers';
 import tokenAbi from './abis/token.json';
 import pobAbi from './abis/pob.json';
-import fogataAbi from './abis/fogata.json';
 import packageJson from '../package.json';
 import { registerVortexCommands } from './vortex-cli';
+import { DashboardProvider, dashboardError, parseDashboardInteger } from './dashboard-rpc';
+import { DashboardProducerData, dashboardAge, dashboardValue, dashboardWholeUnits } from './dashboard-data';
 
 const program = new Command();
 const CLI_VERSION = packageJson.version;
 
 const LATEST_CHANGES = [
+  'producer-dashboard now bounds RPC sockets, staggers cached reads and preserves independent last-good balances.',
   'Added named encrypted wallets with hidden local secret input.',
   'Added local-only Vortex V2 detached signing, separate payer, submission and reconciliation.',
   'Added --password-file and --yes for non-interactive wallet operations.',
@@ -1507,18 +1509,31 @@ program
   .command('producer-dashboard')
   .description('Interactive text dashboard showing active block producers and peers')
   .option('-w, --window <blocks>', 'Number of recent blocks to analyze', '120')
-  .option('-i, --interval <seconds>', 'Refresh interval in seconds', '5')
+  .option('-i, --interval <seconds>', 'Screen and producer activity refresh interval in seconds', '5')
   .option('-t, --top <count>', 'Number of producers to display', '20')
   .option('-v, --view <view>', 'Initial dashboard view: producers or peers', 'producers')
-  .action(async (options: { window?: string; interval?: string; top?: string; view?: string }) => {
-    const resolved = createProviderFromOptions();
-    if (!resolved) return;
-    const { context, provider } = resolved;
+  .option('--balance-interval <seconds>', 'Balance and supply polling interval (1-3600 seconds)', '30')
+  .option('--pool-interval <seconds>', 'Pool polling interval (1-86400 seconds)', '600')
+  .option('--rpc-concurrency <count>', 'Maximum dashboard RPC requests and sockets (1-4)', '2')
+  .option('--rpc-timeout <seconds>', 'Timeout per RPC attempt (1-60 seconds)', '10')
+  .option('--rpc-retries <count>', 'Additional attempts for recoverable reads (0-3)', '2')
+  .option('--rpc-stats', 'Show cumulative dashboard RPC counters')
+  .action(async (options: { window?: string; interval?: string; top?: string; view?: string;
+    balanceInterval: string; poolInterval: string; rpcConcurrency: string; rpcTimeout: string; rpcRetries: string; rpcStats?: boolean }) => {
+    let context: NetworkContext;
+    let balanceInterval: number, poolInterval: number, concurrency: number, timeoutMs: number, retries: number;
+    try {
+      context = resolveNetworkContext();
+      balanceInterval = parseDashboardInteger(options.balanceInterval, '--balance-interval', 3600) * 1000;
+      poolInterval = parseDashboardInteger(options.poolInterval, '--pool-interval', 86400) * 1000;
+      concurrency = parseDashboardInteger(options.rpcConcurrency, '--rpc-concurrency', 4);
+      timeoutMs = parseDashboardInteger(options.rpcTimeout, '--rpc-timeout', 60) * 1000;
+      if (!/^[0-3]$/.test(options.rpcRetries)) throw new Error('--rpc-retries must be an integer from 0 to 3');
+      retries = Number(options.rpcRetries);
+    } catch (error: any) { console.error(error.message); process.exitCode = 1; return; }
     const koinContract = requireContract(context, 'koin', 'producer-dashboard');
     const vhpContract = requireContract(context, 'vhp', 'producer-dashboard');
     if (!koinContract || !vhpContract) return;
-    const koin = getSystemTokenContract(provider, koinContract);
-    const vhp = getSystemTokenContract(provider, vhpContract);
 
     type DashboardView = 'producers' | 'peers';
     type PeerSource = 'lsof' | 'netstat';
@@ -1561,6 +1576,15 @@ program
       return;
     }
 
+    let provider: DashboardProvider;
+    try { provider = new DashboardProvider(context.rpc, { concurrency, timeoutMs, retries }); }
+    catch (error: any) { console.error(error.message); process.exitCode = 1; return; }
+    // Keep this read-only preflight independent of unpublished transaction-network changes.
+    const expectedChainId = context.definition.chainId ?? (context.networkName === 'mainnet'
+      ? 'EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==' : undefined);
+    const producerData = new DashboardProducerData(provider, `${context.networkName}:${expectedChainId || ''}`,
+      koinContract, vhpContract, balanceInterval, poolInterval, Date.now, 150, concurrency);
+
     let currentView = initialView as DashboardView;
     let stopped = false;
     let refreshing = false;
@@ -1569,7 +1593,13 @@ program
     let peerConfigWarning = '';
     let peerSamples = 0;
     let stdinHandler: ((chunk: string | Buffer) => void) | undefined;
-    const poolInfoCache = new Map<string, { isFogataPool: boolean; poolName: string; checkedAt: number }>();
+    let dataTimer: NodeJS.Timeout | undefined;
+    let activityInFlight = false;
+    let activityUpdatedAt: number | undefined;
+    let activityError = '';
+    let networkVerified = false;
+    let activity: { headHeight: number; startHeight: number; latestBlockTimestamp: number; fetchedBlocks: number;
+      ranking: Array<[string, { count: number; lastHeight: number }]> } | undefined;
     const geolocationCache = new Map<string, { value: string; checkedAt: number }>();
     const geolocationInFlight = new Map<string, Promise<string>>();
     const pingCache = new Map<string, { value: string; checkedAt: number }>();
@@ -1582,7 +1612,6 @@ program
       seedIps: new Set<string>(),
       seedEndpoints: new Set<string>(),
     };
-    const POOL_INFO_TTL_MS = 10 * 60 * 1000;
     const GEOLOCATION_TTL_MS = 12 * 60 * 60 * 1000;
     const PING_TTL_MS = 20 * 1000;
     const MAX_BLOCKS_PER_BLOCK_STORE_REQUEST = 1000;
@@ -1593,6 +1622,9 @@ program
       if (timer) {
         clearInterval(timer);
       }
+      if (dataTimer) clearInterval(dataTimer);
+      producerData.cache.close();
+      provider.close();
       if (stdinHandler) {
         process.stdin.off('data', stdinHandler);
       }
@@ -1615,11 +1647,6 @@ program
     const formatLeftCell = (value: string, width: number): string => {
       if (value.length <= width) return value.padEnd(width);
       return `${value.slice(0, width - 3)}...`;
-    };
-
-    const formatWholeUnits = (value: bigint, decimals: number): string => {
-      const divisor = BigInt(10) ** BigInt(decimals);
-      return (value / divisor).toString();
     };
 
     const isValidAddress = (address: string): boolean => {
@@ -2112,41 +2139,17 @@ program
       return allItems;
     };
 
-    const getFogataPoolInfo = async (producer: string): Promise<{ isFogataPool: boolean; poolName: string }> => {
-      const now = Date.now();
-      const cached = poolInfoCache.get(producer);
-
-      if (cached && now - cached.checkedAt < POOL_INFO_TTL_MS) {
-        return { isFogataPool: cached.isFogataPool, poolName: cached.poolName };
-      }
-
-      if (!isValidAddress(producer)) {
-        const info = { isFogataPool: false, poolName: '', checkedAt: now };
-        poolInfoCache.set(producer, info);
-        return { isFogataPool: info.isFogataPool, poolName: info.poolName };
-      }
-
+    const refreshProducerActivity = async (): Promise<void> => {
+      if (activityInFlight || stopped) return;
+      activityInFlight = true;
       try {
-        const fogataContract = new Contract({
-          id: producer,
-          abi: fogataAbi,
-          provider,
-        });
-
-        const { result } = await fogataContract.functions.get_pool_params({});
-        const poolName = (result?.name as string | undefined)?.trim() || 'Fogata Pool';
-        const info = { isFogataPool: true, poolName, checkedAt: now };
-        poolInfoCache.set(producer, info);
-        return { isFogataPool: info.isFogataPool, poolName: info.poolName };
-      } catch (error) {
-        const info = { isFogataPool: false, poolName: '', checkedAt: now };
-        poolInfoCache.set(producer, info);
-        return { isFogataPool: info.isFogataPool, poolName: info.poolName };
-      }
-    };
-
-    const drawProducerView = async (): Promise<void> => {
-      try {
+        if (!networkVerified) {
+          const chainId = await provider.getChainId();
+          if (expectedChainId && chainId !== expectedChainId) {
+            throw new Error('RPC chain does not match selected network');
+          }
+          networkVerified = true;
+        }
         const headInfo = await provider.getHeadInfo();
         const headHeight = parseInt(headInfo.head_topology?.height || '0', 10);
         const headBlockId = headInfo.head_topology?.id;
@@ -2156,8 +2159,6 @@ program
         }
 
         const startHeight = Math.max(1, headHeight - windowSize + 1);
-        const blocksToFetch = Math.max(1, headHeight - startHeight + 1);
-
         const items = await fetchBlocksByHeightPaged(headBlockId, startHeight, headHeight);
         const stats = new Map<string, { count: number; lastHeight: number }>();
         let latestBlockTimestamp = 0;
@@ -2186,160 +2187,68 @@ program
           if (b[1].count !== a[1].count) return b[1].count - a[1].count;
           return b[1].lastHeight - a[1].lastHeight;
         });
+        if (stopped) return;
+        activity = { headHeight, startHeight, latestBlockTimestamp, fetchedBlocks: items.length, ranking };
+        activityUpdatedAt = Date.now();
+        activityError = '';
+        if (currentView === 'producers') producerData.select(ranking.map(([owner]) => owner).filter(isValidAddress),
+          ranking.slice(0, topCount).map(([owner]) => owner).filter(isValidAddress));
+      } catch (error) {
+        activityError = !networkVerified && error instanceof Error && error.message === 'RPC chain does not match selected network'
+          ? error.message : dashboardError(error);
+      } finally { activityInFlight = false; }
+    };
 
-        const topRanking = ranking.slice(0, topCount);
-        const balanceData = new Map<string, { koin: string; vhp: string }>();
-        const vhpRawByProducer = new Map<string, bigint>();
-        const poolInfoData = new Map<string, { isFogataPool: boolean; poolName: string }>();
-        let balanceUnavailableReason = '';
-
-        await Promise.all(topRanking.map(async ([producer]) => {
-          const poolInfo = await getFogataPoolInfo(producer);
-          poolInfoData.set(producer, poolInfo);
-
-          if (!isValidAddress(producer)) {
-            balanceData.set(producer, { koin: 'n/a', vhp: 'n/a' });
-            vhpRawByProducer.set(producer, BigInt(0));
-            return;
-          }
-
-          try {
-            const [{ result: koinResult }, { result: vhpResult }] = await Promise.all([
-              koin.functions.balance_of({ owner: producer }),
-              vhp.functions.balance_of({ owner: producer }),
-            ]);
-
-            const koinRaw = BigInt(koinResult?.value || '0');
-            const vhpRaw = BigInt(vhpResult?.value || '0');
-
-            balanceData.set(producer, {
-              koin: formatWholeUnits(koinRaw, 8),
-              vhp: formatWholeUnits(vhpRaw, 8),
-            });
-            vhpRawByProducer.set(producer, vhpRaw);
-          } catch (error: any) {
-            if (!balanceUnavailableReason) {
-              balanceUnavailableReason = error?.message || String(error);
-            }
-            balanceData.set(producer, { koin: 'n/a', vhp: 'n/a' });
-            vhpRawByProducer.set(producer, BigInt(0));
-          }
-        }));
-
-        // Fetch VHP balances for remaining active producers to estimate network APY
-        await Promise.all(ranking.map(async ([producer]) => {
-          if (vhpRawByProducer.has(producer)) return;
-          if (!isValidAddress(producer)) {
-            vhpRawByProducer.set(producer, BigInt(0));
-            return;
-          }
-
-          try {
-            const { result: vhpResult } = await vhp.functions.balance_of({ owner: producer });
-            vhpRawByProducer.set(producer, BigInt(vhpResult?.value || '0'));
-          } catch (error: any) {
-            if (!balanceUnavailableReason) {
-              balanceUnavailableReason = error?.message || String(error);
-            }
-            vhpRawByProducer.set(producer, BigInt(0));
-          }
-        }));
-
-        const activeVhpRaw = ranking.reduce((acc, [producer]) => {
-          return acc + (vhpRawByProducer.get(producer) || BigInt(0));
-        }, BigInt(0));
-
-        let koinSupplyRaw: bigint | undefined;
-        let vhpSupplyRaw: bigint | undefined;
-        let virtualSupplyRaw: bigint | undefined;
-        let supplyUnavailableReason = '';
-
-        try {
-          const [{ result: koinSupplyResult }, { result: vhpSupplyResult }] = await Promise.all([
-            koin.functions.total_supply({}),
-            vhp.functions.total_supply({}),
-          ]);
-
-          koinSupplyRaw = BigInt(koinSupplyResult?.value || '0');
-          vhpSupplyRaw = BigInt(vhpSupplyResult?.value || '0');
-          virtualSupplyRaw = koinSupplyRaw + vhpSupplyRaw;
-        } catch (error: any) {
-          supplyUnavailableReason = error?.message || String(error);
-        }
-
-        let estimatedApy = 'n/a';
-        if (virtualSupplyRaw !== undefined && activeVhpRaw > BigInt(0)) {
-          const virtualSupplyFloat = parseFloat(utils.formatUnits(virtualSupplyRaw.toString(), 8));
-          const activeVhpFloat = parseFloat(utils.formatUnits(activeVhpRaw.toString(), 8));
-
-          if (activeVhpFloat > 0) {
-            // Estimated APY for actively producing VHP based on 2% annual inflation target.
-            estimatedApy = ((2 * virtualSupplyFloat) / activeVhpFloat).toFixed(2);
-          }
-        }
-
-        const fetchedBlocks = items.length;
-        const now = new Date();
-
-        process.stdout.write('\x1Bc');
-        console.log('📊 Koinos Producer Dashboard (Ctrl+C or q to exit)');
-        console.log('─'.repeat(140));
-        console.log(' View: PRODUCERS | Press 1=producers 2=peers q=quit');
-        console.log(` RPC: ${context.rpc}`);
-        console.log(` Updated: ${now.toISOString()}`);
-        console.log(` Head Block: ${headHeight}`);
-        if (latestBlockTimestamp > 0) {
-          console.log(` Last Block Time: ${new Date(latestBlockTimestamp).toISOString()}`);
-        }
-        console.log(` Window: ${startHeight} → ${headHeight} (${fetchedBlocks} block${fetchedBlocks === 1 ? '' : 's'})`);
-        console.log(` Active Producers: ${ranking.length}`);
-        if (virtualSupplyRaw !== undefined && koinSupplyRaw !== undefined && vhpSupplyRaw !== undefined) {
-          console.log(` Total KOIN Supply: ${formatWholeUnits(koinSupplyRaw, 8)}`);
-          console.log(` Total VHP Supply: ${formatWholeUnits(vhpSupplyRaw, 8)}`);
-          console.log(` Total Virtual Supply (VHP + KOIN): ${formatWholeUnits(virtualSupplyRaw, 8)}`);
-        } else {
-          console.log(' Total Virtual Supply (VHP + KOIN): n/a');
-        }
-        console.log(` Estimated APY (active window): ${estimatedApy === 'n/a' ? 'n/a' : `${estimatedApy}%`}`);
-        if (balanceUnavailableReason) {
-          console.log(' ⚠️  Balance data unavailable for one or more producers on this RPC.');
-        }
-        if (supplyUnavailableReason) {
-          console.log(' ⚠️  Supply/APY metrics unavailable on this RPC.');
-        }
-        console.log('─'.repeat(140));
-        console.log(` ${'#'.padEnd(3)} ${'Producer'.padEnd(36)} ${'Pool'.padEnd(24)} ${'Blocks'.padStart(8)} ${'Share'.padStart(8)} ${'Last Seen'.padStart(10)} ${'KOIN'.padStart(20)} ${'VHP'.padStart(20)}`);
-        console.log('─'.repeat(140));
-
-        if (!ranking.length) {
-          console.log(' No producer activity found in this window.');
-        } else {
-          topRanking.forEach(([producer, data], index) => {
-            const share = fetchedBlocks > 0 ? ((data.count / fetchedBlocks) * 100).toFixed(2) : '0.00';
-            const blocksAgo = Math.max(0, headHeight - data.lastHeight);
-            const balances = balanceData.get(producer) || { koin: 'n/a', vhp: 'n/a' };
-            const poolInfo = poolInfoData.get(producer) || { isFogataPool: false, poolName: '' };
-            const producerDisplay = poolInfo.isFogataPool
-              ? `${ANSI_ORANGE}${producer.padEnd(36)}${ANSI_RESET}`
-              : producer.padEnd(36);
-            const poolNameDisplay = poolInfo.isFogataPool ? poolInfo.poolName : '-';
-            console.log(
-              ` ${(index + 1).toString().padEnd(3)} ${producerDisplay} ${formatLeftCell(poolNameDisplay, 24)} ${data.count.toString().padStart(8)} ${`${share}%`.padStart(8)} ${`${blocksAgo} ago`.padStart(10)} ${formatCell(balances.koin, 20)} ${formatCell(balances.vhp, 20)}`
-            );
-          });
-        }
-
-        console.log('─'.repeat(140));
-        console.log(` Refresh every ${refreshSeconds}s | Window size ${windowSize} blocks | Showing top ${topCount}`);
-      } catch (error: any) {
-        process.stdout.write('\x1Bc');
-        console.log('📊 Koinos Producer Dashboard (Ctrl+C or q to exit)');
-        console.log('─'.repeat(140));
-        console.log('❌ Failed to refresh producer dashboard.');
-        console.log(`   ${error?.message || error}`);
-        console.log('─'.repeat(140));
-        console.log(` Retrying in ${refreshSeconds}s...`);
+    const drawProducerView = (): void => {
+      void refreshProducerActivity();
+      process.stdout.write('\x1Bc');
+      console.log('📊 Koinos Producer Dashboard (Ctrl+C or q to exit)');
+      console.log('─'.repeat(156));
+      console.log(' View: PRODUCERS | Press 1=producers 2=peers q=quit');
+      console.log(` RPC: ${context.rpc}`);
+      console.log(` Updated: ${new Date().toISOString()}`);
+      if (activityError) console.log(` Warning: ${activityError}; ${activity ? `activity stale:${dashboardAge(Date.now() - activityUpdatedAt!)}` : 'activity n/a'}`);
+      if (!activity) {
+        console.log(' Head / producer activity: n/a (awaiting RPC)');
+      } else {
+        const { headHeight, startHeight, latestBlockTimestamp, fetchedBlocks, ranking } = activity;
+        const producers = ranking.map(([owner]) => owner);
+        const visible = ranking.slice(0, topCount).map(([owner]) => owner);
+        const koinSupply = producerData.supply('koin');
+        const vhpSupply = producerData.supply('vhp');
+        const virtualSupply = { value: koinSupply.value === undefined || vhpSupply.value === undefined ? undefined : koinSupply.value + vhpSupply.value,
+          stale: koinSupply.stale || vhpSupply.stale, ageMs: Math.max(koinSupply.ageMs ?? 0, vhpSupply.ageMs ?? 0), loading: koinSupply.loading || vhpSupply.loading };
+        const activityAge = Date.now() - activityUpdatedAt!;
+        const activityStale = !!activityError || activityAge >= refreshSeconds * 1000;
+        const apy = producerData.apy(producers);
+        if (activityStale) { apy.stale = true; apy.ageMs = Math.max(apy.ageMs ?? 0, activityAge); }
+        console.log(` Head Block: ${headHeight} | Activity ${activityStale ? 'stale:' : 'age: '}${dashboardAge(activityAge)}`);
+        if (latestBlockTimestamp > 0) console.log(` Last Block Time: ${new Date(latestBlockTimestamp).toISOString()}`);
+        console.log(` Window: ${startHeight} → ${headHeight} (${fetchedBlocks} blocks) | Active Producers: ${ranking.length}`);
+        console.log(` Total KOIN Supply: ${dashboardValue(koinSupply, dashboardWholeUnits, 48)}`);
+        console.log(` Total VHP Supply: ${dashboardValue(vhpSupply, dashboardWholeUnits, 48)}`);
+        console.log(` Total Virtual Supply (VHP + KOIN): ${dashboardValue(virtualSupply, dashboardWholeUnits, 48)}`);
+        console.log(` Estimated APY (active window): ${dashboardValue(apy, value => `${value}%`, 48)}`);
+        for (const warning of producerData.warnings(producers, visible)) console.log(` Warning: ${warning}`);
+        const ages = visible.flatMap(owner => [producerData.balance('koin', owner), producerData.balance('vhp', owner)])
+          .flatMap(read => read.ageMs === undefined ? [] : [read.ageMs]);
+        console.log(` Oldest available balance: ${ages.length ? dashboardAge(Math.max(...ages)) : 'n/a'}`);
+        console.log('─'.repeat(156));
+        console.log(` ${'#'.padEnd(3)} ${'Producer'.padEnd(36)} ${'Pool'.padEnd(24)} ${'Blocks'.padStart(8)} ${'Share'.padStart(8)} ${'Last Seen'.padStart(10)} ${'KOIN'.padStart(24)} ${'VHP'.padStart(24)}`);
+        if (!ranking.length) console.log(' No producer activity found in this window.');
+        ranking.slice(0, topCount).forEach(([producer, data], index) => {
+          const pool = producerData.pool(producer);
+          const producerDisplay = pool.value ? `${ANSI_ORANGE}${producer.padEnd(36)}${ANSI_RESET}` : producer.padEnd(36);
+          const poolName = dashboardValue(pool, value => value.name);
+          const koinBalance = dashboardValue(producerData.balance('koin', producer), dashboardWholeUnits);
+          const vhpBalance = dashboardValue(producerData.balance('vhp', producer), dashboardWholeUnits);
+          const share = fetchedBlocks ? ((data.count / fetchedBlocks) * 100).toFixed(2) : '0.00';
+          console.log(` ${(index + 1).toString().padEnd(3)} ${producerDisplay} ${formatLeftCell(poolName, 24)} ${data.count.toString().padStart(8)} ${`${share}%`.padStart(8)} ${`${Math.max(0, headHeight - data.lastHeight)} ago`.padStart(10)} ${formatCell(koinBalance, 24)} ${formatCell(vhpBalance, 24)}`);
+        });
       }
+      console.log('─'.repeat(156));
+      console.log(` Screen/activity ${refreshSeconds}s | Balances/supply ${balanceInterval / 1000}s | Pools ${poolInterval / 1000}s | RPC limit ${concurrency}`);
+      if (options.rpcStats) console.log(` RPC stats: ${JSON.stringify(provider.metrics)}`);
     };
 
     const drawPeersView = async (): Promise<void> => {
@@ -2456,12 +2365,15 @@ program
 
         if (normalized === '1' && currentView !== 'producers') {
           currentView = 'producers';
+          if (activity) producerData.select(activity.ranking.map(([owner]) => owner).filter(isValidAddress),
+            activity.ranking.slice(0, topCount).map(([owner]) => owner).filter(isValidAddress));
           void draw();
           return;
         }
 
         if (normalized === '2' && currentView !== 'peers') {
           currentView = 'peers';
+          producerData.cache.setWanted([]);
           void draw();
         }
       };
@@ -2471,6 +2383,7 @@ program
 
     await loadPeerConfig();
     enableKeyboardControls();
+    dataTimer = setInterval(() => producerData.cache.tick(), 100);
     await draw();
     timer = setInterval(() => {
       void draw();

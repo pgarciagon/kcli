@@ -205,24 +205,48 @@ This command reads PoB `get_public_key` and returns the public key assigned to t
 kcli producer-dashboard
 kcli producer-dashboard --window 240 --interval 3 --top 25
 kcli producer-dashboard --view peers
+kcli producer-dashboard --balance-interval 30 --pool-interval 600 --rpc-concurrency 2 --rpc-stats
 ```
 
 Shows a live text-based dashboard with two views: `producers` and `peers`.
 
 - `--window`: number of recent blocks to analyze (default: `120`)
-- `--interval`: refresh interval in seconds (default: `5`)
+- `--interval`: screen and producer-activity refresh interval in seconds (default: `5`); it does not refetch every balance
 - `--top`: number of producers to display (default: `20`)
 - `--view`: initial view (`producers` or `peers`, default: `producers`)
+- `--balance-interval`: balance and total-supply polling interval, `1-3600` seconds (default: `30`)
+- `--pool-interval`: pool polling interval, `1-86400` seconds (default: `600`)
+- `--rpc-concurrency`: dashboard-only request and HTTP socket limit, `1-4` (default: `2`)
+- `--rpc-timeout`: absolute timeout per RPC attempt, `1-60` seconds (default: `10`)
+- `--rpc-retries`: additional attempts for recoverable reads, `0-3` (default: `2`, exponential backoff with jitter)
+- `--rpc-stats`: cumulative request attempts, errors, retries, concurrency and socket counters
 - Switch views while running with `1` (producers) and `2` (peers)
 - Exit with `q` or `Ctrl+C`
 - Includes per-producer `KOIN` and `VHP` columns (shown as whole numbers, no decimals)
-- Shows estimated APY (based on active producers in the analyzed window)
+- Shows estimated APY only when every active producer's VHP and both token supplies are available; stale inputs produce a labeled stale estimate
 - Shows total virtual supply (`VHP + KOIN`)
 - Detects Fogata pools by calling `get_pool_params`; highlights those producer addresses in orange and shows pool `name`
 - Peers view shows active peer endpoint (IP:port), geolocation, ping in seconds, seen ratio, and a role heuristic (`Seed`, `Likely Producer`, `Possible Producer`, `Relay/Unknown`)
 - Seed detection uses local node `p2p.peer` config entries when available (`$KOINOS_BASEDIR/config/config.yml`, `~/.koinos/config/config.yml`, `~/.koinos/config.yml`, `/etc/koinos/config.yml`)
 - Geolocation is best-effort using `ipwho.is`; role classification is heuristic (not an on-chain proof)
 - Block window fetch is automatically paginated, so `--window` can be greater than `1000`
+
+Reads are staggered and cached in memory by network, endpoint, contract, method
+and arguments. KOIN and VHP update independently. Temporary failures retain the
+last successful value with `stale:<age>`; `n/a` means no valid value is available,
+never zero. Pool errors mean unknown, not proof that an address is not a pool.
+The screen keeps updating during slow reads, without overlapping activity scans
+or accumulating polling rounds. The dashboard's own HTTP/HTTPS agent reuses at
+most the configured number of sockets and closes idle sockets after one second.
+Other commands and their transports are unchanged.
+
+Thirty seconds trades block-by-block balance accuracy for substantially fewer
+reads; the screen shows the oldest available balance age. Pool names normally
+change much less frequently, so their default remains ten minutes. These are
+polling targets, not freshness guarantees: startup, many producers, slow RPCs or
+retries can delay results. Cached balances and APY are not head-anchored and must
+not be used as transaction preflight. See [dashboard reliability and measured
+validation](DASHBOARD_RPC_RELIABILITY.md) for limitations and reproducible checks.
 
 #### Burn KOIN to Receive VHP
 ```bash
