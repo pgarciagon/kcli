@@ -3,7 +3,7 @@ import { Signer } from 'koilib';
 import { hiddenInput } from './secret-input';
 import { NamedWallets, randomSigner } from './named-wallets';
 import { readSafe, RefusalError, requireValue, strictJson, writeExclusive } from './secure-files';
-import { appendSignature, encodeAction, loadVortex, mergePackages, preflightVortex, prepareVortex, readPackage, reconcileVortex, reviewPackage, submitVortex, VortexProvider } from './vortex';
+import { appendSignature, encodeAction, loadVortex, mergePackages, preflightVortex, prepareVortex, readPackage, reconcileVortex, reviewPackage, submitVortex, vortexProvider } from './vortex';
 
 async function newPassword(): Promise<string> {
   const first = await hiddenInput('New wallet password: '); const second = await hiddenInput('Confirm wallet password: ');
@@ -22,11 +22,14 @@ function guarded(fn: (...args: any[]) => Promise<void> | void) {
 const output = (v: unknown) => console.log(JSON.stringify(v, null, 2));
 function bind(command: Command): Command {
   return command.requiredOption('--manifest <file>', 'Independently reviewed deployment manifest')
-    .requiredOption('--abi <file>', 'Exact reviewed deployed ABI file');
+    .requiredOption('--abi <file>', 'Exact reviewed deployed ABI file')
+    .option('--review <file>', 'Mainnet Ed25519 attestation binding the exact manifest')
+    .option('--review-key <sha256>', 'Independently trusted review-key SPKI fingerprint');
 }
 function online(command: Command): Command {
-  return command.option('--network <name>', 'Required explicit network (local for this qualification build)')
-    .option('--rpc <url>', 'Required explicit loopback RPC; saved configuration is not used')
+  return command.option('--network <name>', 'Required explicit local or mainnet profile')
+    .option('--rpc <url>', 'Required explicit primary RPC; saved configuration is not used')
+    .option('--corroborating-rpc <url>', 'Required independently operated reviewed HTTPS RPC on mainnet')
     .requiredOption('--contract <address>', 'Exact reviewed contract');
 }
 function explicitOnline(options: any, program: Command): any {
@@ -40,7 +43,7 @@ function explicitOnline(options: any, program: Command): any {
   return result;
 }
 function ctx(options: any) {
-  const c = loadVortex(options.manifest, options.abi);
+  const c = loadVortex(options.manifest, options.abi, options.review, options.reviewKey);
   if (options.network !== undefined) requireValue(options.network === c.manifest.network.name && options.contract === c.manifest.contract.address, 'Explicit network/contract does not match the manifest.'); return c;
 }
 function outcome(result: any): void {
@@ -69,7 +72,7 @@ export function registerVortexCommands(program: Command): void {
     .option('--dry-run', 'Only display the unsigned package; never write it')
     .action(guarded(async (action, options) => {
       options = explicitOnline(options, program);
-      const c = ctx(options); const p = new VortexProvider(options.rpc); const args = strictJson(readSafe(options.args));
+      const c = ctx(options); const p = vortexProvider(c, options.rpc, options.corroboratingRpc); const args = strictJson(readSafe(options.args));
       const pkg = await prepareVortex(c, p, await encodeAction(c, action, args, !!options.propose), options.rcLimit);
       output(await reviewPackage(c, pkg));
       if (options.dryRun) { output({ dryRun: true, walletUnlocked: false, signed: false, submitted: false, transaction: pkg.transaction }); return; }
@@ -106,13 +109,13 @@ export function registerVortexCommands(program: Command): void {
     .option('--dry-run', 'Preflight only; no submission intent or RPC broadcast')
     .action(guarded(async (file, options) => {
       options = explicitOnline(options, program);
-      const c = ctx(options); const p = new VortexProvider(options.rpc); const pkg = readPackage(file); output(await preflightVortex(c, p, pkg));
+      const c = ctx(options); const p = vortexProvider(c, options.rpc, options.corroboratingRpc); const pkg = readPackage(file); output(await preflightVortex(c, p, pkg));
       if (options.dryRun) { output({ dryRun: true, signed: false, submitted: false }); return; }
       requireValue(options.id && options.journalDir && /^[1-9]\d{0,2}$/.test(options.wait) && Number(options.wait) <= 300, 'Submission requires --id, --journal-dir and a bounded wait.');
       outcome(await submitVortex(c, p, pkg, options.journalDir, options.id, Number(options.wait) * 1000));
     }));
   online(bind(vortex.command('reconcile <package>'))).action(guarded(async (file, options) => {
     options = explicitOnline(options, program);
-    const c = ctx(options); outcome(await reconcileVortex(c, new VortexProvider(options.rpc), readPackage(file)));
+    const c = ctx(options); outcome(await reconcileVortex(c, vortexProvider(c, options.rpc, options.corroboratingRpc), readPackage(file)));
   }));
 }

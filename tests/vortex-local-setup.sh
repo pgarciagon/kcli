@@ -18,7 +18,10 @@ if "${D[@]}" network inspect "$NET" >/dev/null 2>&1 || "${D[@]}" volume inspect 
 for name in amqp mempool block-store chain tx-store meta-store jsonrpc controller producer; do
   if "${D[@]}" inspect "$RUN_ID-$name" >/dev/null 2>&1; then echo 'Container name exists; refuse reuse' >&2; exit 2; fi
 done
-"${D[@]}" network create --internal --label kcli.vortex.exercise="$RUN_ID" "$NET" >/dev/null
+# Explicit fresh subnet avoids exhausting Docker's default pools; collisions
+# still refuse creation. No retained lab network/container/volume is removed.
+SUBNET="10.254.$((16#${RUN_ID: -2})).0/24"
+"${D[@]}" network create --internal --subnet "$SUBNET" --label kcli.vortex.exercise="$RUN_ID" "$NET" >/dev/null
 "${D[@]}" volume create --label kcli.vortex.exercise="$RUN_ID" "$VOL" >/dev/null
 "${D[@]}" volume create --label kcli.vortex.exercise="$RUN_ID" "$WORK" >/dev/null
 COPYFILE_DISABLE=1 tar -C "$SOURCE/lab/koinos/config" -cf - . | "${D[@]}" run --rm -i --network none -v "$VOL:/chain-data" "$ALPINE_IMG" sh -ec 'tar -C /chain-data -xf -'

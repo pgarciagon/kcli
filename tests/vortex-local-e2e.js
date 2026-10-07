@@ -18,7 +18,7 @@ assert(source, 'give the exact clean pinned upstream checkout');
 const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'kcli-vortex-exercise-')); fs.chmodSync(dir, 0o700);
 const home = path.join(dir, 'home'); fs.mkdirSync(home, { mode: 0o700 });
 const wallets = path.join(home, 'wallets'); const journal = path.join(dir, 'journal'); fs.mkdirSync(journal, { mode: 0o700 });
-const runId = 'kcli-vortex-20261004-' + crypto.randomBytes(5).toString('hex');
+const runId = 'kcli-vortex-' + new Date().toISOString().slice(0, 10).replace(/-/g, '') + '-' + crypto.randomBytes(5).toString('hex');
 const results = []; let rpc, deployment, manifestFile, abiFile, ctx, relayServer; let sequence = 0; const cli = process.env.KCLI_TEST_EXECUTABLE || 'kcli';
 async function command(executable, argv, input, env = {}) {
   return new Promise((resolve, reject) => {
@@ -64,7 +64,7 @@ async function check(name, fn) {
   console.log('PASS ' + name); writeEvidence();
 }
 function writeEvidence(error) {
-  const record = { schema: 1, runId, upstream: P.VORTEX_PIN, syntheticOnly: true, publicChainUsed: false, independentCustody: false, minimumDelayMs: '172800000', build: deployment && { codeSha256: deployment.codeSha256, abiSha256: deployment.abiSha256, sourceSha256: deployment.sourceSha256, variant: 'fresh-initializer', adapterSha256: '9f999b2b4561af7062247a6bf47a47790f0c5d9cabdf548788651955136dcd72' }, results, error: error ? 'Local-chain exercise incomplete; see diagnostics and retained synthetic namespace.' : null };
+  const record = { schema: 1, runId, cliVersion: require('../package.json').version, networkProfile: 'local', mainnetProfileExecuted: false, upstream: P.VORTEX_PIN, syntheticOnly: true, publicChainUsed: false, independentCustody: false, minimumDelayMs: '172800000', build: deployment && { codeSha256: deployment.codeSha256, abiSha256: deployment.abiSha256, sourceSha256: deployment.sourceSha256, variant: 'fresh-initializer', adapterSha256: '9f999b2b4561af7062247a6bf47a47790f0c5d9cabdf548788651955136dcd72' }, results, error: error ? 'Local-chain exercise incomplete; see diagnostics and retained synthetic namespace.' : null };
   fs.writeFileSync(path.join(dir, 'evidence.json'), JSON.stringify(record, null, 2), { mode: 0o600 });
 }
 async function prepare(action, args = {}, propose = false, expectedFailure = false) {
@@ -185,7 +185,7 @@ async function startProducer() {
     await raw('unpause'); assert.match(await control('execute'), /REFUSED proposal expired/);
   });
   await check('source and both installed paths expose the same commands/version', async () => {
-    for (const argv of [[cli, '--version'], ['/opt/homebrew/bin/kcli', '--version'], [process.execPath, 'dist/index.js', '--version']]) { const r = spawnSync(argv[0], argv.slice(1), { cwd: root, env: { ...process.env, HOME: home }, encoding: 'utf8' }); assert.equal(r.status, 0); assert.match(r.stdout, /^1\.5\.0/); }
+    for (const argv of [[cli, '--version'], ['/opt/homebrew/bin/kcli', '--version'], [process.execPath, 'dist/index.js', '--version']]) { const r = spawnSync(argv[0], argv.slice(1), { cwd: root, env: { ...process.env, HOME: home }, encoding: 'utf8' }); assert.equal(r.status, 0); assert.equal(r.stdout.trim(), require('../package.json').version); }
   });
   writeEvidence(); console.log('LOCAL CONTRACT EXERCISE PASS: ' + results.length + ' checks');
 })().catch(error => {

@@ -1,11 +1,95 @@
 # Vortex CLI Implementation Status
 
-Updated 5 October 2026. The local definition of done is achieved; this is not
+Updated 7 October 2026. The [1.6.0 software release](RELEASE_NOTES.md) includes
+the restricted mainnet profile and the full local feature set. Deployment
+qualification remains separate. The dated records below preserve prior local
+acceptance and publication, not a byte-identical claim for the release build.
+
+## Mainnet Extension Goal, 5 October
+
+Pablo explicitly started the saved goal with "Haz el goal". The bounded software
+objective is implemented, tested, locally exercised and documented. Schema-1 local manifests
+remain compatible. Schema-2 mainnet manifests require an exact Ed25519 review
+attestation, an explicitly trusted review-key fingerprint and two reviewed
+HTTPS RPCs with distinct hosts/origins/operator identifiers. The second RPC is
+read-only. Public testnets remain refused; existing addresses are not vetoed.
+
+Protected code/authority/storage, nonce and sufficient Mana are observed in
+bracketed read windows. Advancing heads are accepted only with bounded canonical
+receipt/ancestry checks and no protected deltas; both RPCs must agree on state,
+common canonical/LIB heights, exact inclusion and receipt outcome. Same-anchor
+state roots/time must agree. Different head heights may agree at common heights.
+The 48-hour delay, 24-hour window, exact offline signatures, separate payer,
+durable intents and no-resend rules remain unchanged. No generic call/force or
+verification bypass was added.
+
+These are optimistic checks under reviewed node/receipt trust, not historical
+anchored reads, independent cryptographic state proofs or a complete PoB verifier.
+The [administrator guide](VORTEX_ADMINISTRATOR_GUIDE.md) documents bounds, clock
+assumptions, review authentication and human approval requirements.
+
+The 5 October development checkout passed 69 tests (25 KFS, 29 wallet/local-Vortex, 15 mainnet
+fixtures), including installed online/offline mainnet dry-runs with synthetic
+RPC routing and no real wallet/configuration/intent writes. The fixtures cover
+authenticated review, TLS policy, advancing/lagging heads, protected deltas,
+forks/root mismatches, authority/nonce/Mana disagreement, expiry, exact receipt
+and signature matching, insufficient finality and uncertain no-resend behavior.
+They do not represent public-chain execution or operator independence.
+
+Two fresh-chain repeats each passed 18 actual contract checks; the final repeat
+includes nonce/Mana inside the protected read window and six irreversible
+action records through installed `kcli`. It exercised quorum refusals, detached
+merge with RPC stopped, delayed unpause, immediate pause, 3-of-3 recovery,
+cancellation, replay and expired execution. The clock advances locally from the
+past; this is not 48 hours of wall-clock monitoring or busy-public-chain availability.
+[Final record](evidence/2026-10-05-vortex-local-e2e-mainnet-extension.json).
+The prior 4 October evidence is unchanged. Both installed paths report 1.6.0;
+this is a minor software capability bump, not a tag, push or registry release.
+
+A public read-only observation found a candidate ABI incompatible with both
+reviewed adapters and unavailable raw-Wasm verification. This does not ban its
+address or diagnose its implementation version. No approved mainnet deployment,
+independent public RPC pair, actual custody or source/code/policy mapping is
+qualified. [Observation](evidence/2026-10-05-vortex-public-observation.json).
+Real wallets/configuration, unrelated KFS/transfer work and all production hosts
+are preserved. No real signing, public submission, deployment or publication
+was performed for this goal.
+
+The first attempt failed before chain bootstrap because Docker's automatic
+address pools were exhausted. The harness now uses a collision-checked fresh
+explicit internal subnet; no old container/network/volume was removed. Only
+new task containers were started/stopped. The dedicated lab VM was returned
+to its initial stopped state, and the default Docker context stayed unchanged.
+
+## Prior Local Acceptance And Publication
+
+The earlier local definition of done was achieved; this was not
 production qualification or deployment authorization. The user authorized
 committing and pushing the completed wallet/Vortex source on 5 October.
 This is source publication, not a tagged release or registry publication.
 No real keys, mainnet/public-testnet transactions, production membership or
 servers were used.
+
+## Parallel Development Scope, 5 October
+
+Pablo clarified that kcli and the bridge are to be developed in parallel and
+requested removal of the categorical existing-bridge prohibition. The fixed
+address veto was removed locally; existing and fresh deployments must instead
+meet the same reviewed code/ABI, authority, membership and policy checks.
+This uncommitted change does not establish compatibility with any deployment.
+At that decision checkpoint the local-network/loopback guards remained; the
+newer mainnet implementation above supersedes that software limitation.
+
+The [updated mainnet goal prompt](VORTEX_MAINNET_GOAL_PROMPT.md) includes parallel
+development and read-only qualification of existing deployments, rather than
+excluding them by address. It does not authorize real keys, deployment, signing,
+transactions, funds, servers or publication. Historical acceptance counts below
+describe the earlier revision; the address-policy change has its own regression.
+The updated full checkout passes 54 tests (25 KFS, 29 wallet/Vortex), including
+formerly excluded address eligibility and installed-CLI public-network refusal.
+The local installed build was rebuilt; this revision is not the published
+`0be1442` artifact. No disposable-chain rerun or live deployment qualification
+is claimed for this narrowly scoped policy change.
 
 ## Implemented Locally
 
@@ -16,7 +100,7 @@ servers were used.
   recomputation, offline sign-only, separate payer signing and independent merge.
 - Policy-selected ordinary/recovery thresholds and separate validator authority;
   immediate pause, unpause/recovery proposal and execution, cancellation only.
-- Explicit local-only submit with fresh code/ABI/membership/state/nonce/Mana
+- Initially local-only submit with fresh code/ABI/membership/state/nonce/Mana
   checks, durable intent, no automatic retry and canonical receipt/LIB/state
   reconciliation.
 - English [administrator guide](VORTEX_ADMINISTRATOR_GUIDE.md), focused tests and
@@ -90,4 +174,5 @@ verification; no production stack was started.
 
 Independent custody, actual owners/keys, public deployment policy, independent
 sources, production security qualification and human-approved deployment remain
-separate. Public-chain Vortex use is hard-disabled in this qualification build.
+separate. Public-chain use was hard-disabled in that prior 1.5.0 qualification
+build; the current 1.6.0 profile is described above, not production approval.

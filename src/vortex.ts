@@ -3,10 +3,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { canonical, objectKeys, privateDirectory, readSafe, RefusalError, requireValue, strictJson, writeExclusive } from './secure-files';
 import { actionHash, address, b64, bytesField, decodeExact, DELAY_MS, entryPoint, kernel, nonceValue, reviewedAbi, sha, transactionId, uint, varint, VORTEX_PIN, VORTEX_REPOSITORY, WINDOW_MS } from './vortex-protocol';
+import { authenticateReview, canonicalBlock, corroborate, NetworkProfile, rpcUrl, sameObservedState, stableRead, unchangedInterval, validateNetwork } from './vortex-network';
 
 export interface VortexManifest {
   schema: number; source: { repository: string; commit: string; variant: string; adapterSha256: string | null };
-  network: { name: string; chainId: string };
+  network: { name: string; chainId: string; rpcs?: { url: string; operator: string }[] };
   contract: { address: string; codeSha256: string; abiSha256: string };
   policy: { reviewed: boolean; admins: string[]; adminThreshold: number; recoveryThreshold: number; validators: string[]; payer: string; delayMs: string; actionWindowMs: string };
 }
@@ -14,7 +15,6 @@ export interface VortexPackage { schema: number; manifestSha256: string; abiSha2
 export interface VortexContext { manifest: VortexManifest; manifestSha256: string; abiSha256: string; abi: Abi; contract: Contract; }
 export interface Review { id: string; chain: string; contract: string; header: any; payer: string; nonce: string; manaLimit: string; action: any; authority: string; required: number; admins: string[]; signers: string[]; adminSignatures: number; payerSigned: boolean; status: string; proposal: any; snapshot: any; }
 
-const PUBLIC_CHAINS = ['EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==', 'EiAIKVvm6-V2qmsmUvPJy09vCCLbtn9lHFpwrJbcTIEWRQ==', 'EiBncD4pKRIQWco_WRqo5Q-xnXR7JuO3PtZv983mKdKHSQ=='];
 const hexHash = (v: any) => requireValue(typeof v === 'string' && /^[0-9a-f]{64}$/.test(v), 'Invalid SHA-256 binding.');
 function identities(list: any, min: number, max: number): string[] {
   requireValue(Array.isArray(list) && list.length >= min && list.length <= max, 'Invalid membership count.'); list.forEach(address);
@@ -23,13 +23,12 @@ function identities(list: any, min: number, max: number): string[] {
 const sameSet = (a: string[], b: string[]) => canonical([...a].sort()) === canonical([...b].sort());
 export function validateManifest(m: VortexManifest): void {
   objectKeys(m, ['schema', 'source', 'network', 'contract', 'policy']); objectKeys(m.source, ['repository', 'commit', 'variant', 'adapterSha256']);
-  objectKeys(m.network, ['name', 'chainId']); objectKeys(m.contract, ['address', 'codeSha256', 'abiSha256']);
+  validateNetwork(m.schema, m.network); objectKeys(m.contract, ['address', 'codeSha256', 'abiSha256']);
   objectKeys(m.policy, ['reviewed', 'admins', 'adminThreshold', 'recoveryThreshold', 'validators', 'payer', 'delayMs', 'actionWindowMs']);
-  requireValue(m.schema === 1 && m.source.repository === VORTEX_REPOSITORY && m.source.commit === VORTEX_PIN, 'Unreviewed Vortex release.');
+  requireValue(m.source.repository === VORTEX_REPOSITORY && m.source.commit === VORTEX_PIN, 'Unreviewed Vortex release.');
   requireValue(['pinned-migration', 'fresh-initializer'].includes(m.source.variant), 'Unsupported contract variant.');
   if (m.source.variant === 'fresh-initializer') hexHash(m.source.adapterSha256); else requireValue(m.source.adapterSha256 === null, 'Unexpected source adapter.');
-  requireValue(m.network.name === 'local' && !PUBLIC_CHAINS.includes(m.network.chainId), 'This qualification build only supports isolated local chains.'); b64(m.network.chainId, 34);
-  address(m.contract.address); requireValue(m.contract.address !== '1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8', 'Existing production bridge is prohibited.');
+  address(m.contract.address);
   hexHash(m.contract.codeSha256); hexHash(m.contract.abiSha256);
   const p = m.policy; requireValue(p.reviewed === true, 'Policy is not marked reviewed (this declaration is not proof of on-chain authority).');
   identities(p.admins, 3, 19); identities(p.validators, 3, 19); address(p.payer);
@@ -38,8 +37,9 @@ export function validateManifest(m: VortexManifest): void {
   const control = [m.contract.address, p.payer, ...p.admins, ...p.validators]; requireValue(new Set(control).size === control.length, 'Bridge, payer, administrators and validators must be separate identities.');
   requireValue(uint(p.delayMs) === DELAY_MS && uint(p.actionWindowMs) === WINDOW_MS, 'Only the reviewed 48-hour delay / 24-hour execution window is qualified.');
 }
-export function loadVortex(manifestFile: string, abiFile: string): VortexContext {
+export function loadVortex(manifestFile: string, abiFile: string, reviewFile?: string, reviewKey?: string): VortexContext {
   const manifestText = readSafe(manifestFile); const m = strictJson(manifestText); validateManifest(m);
+  if (m.network.name === 'mainnet') authenticateReview(manifestText, reviewFile, reviewKey);
   const abiText = readSafe(abiFile); requireValue(sha(abiText) === m.contract.abiSha256, 'ABI hash does not match the reviewed manifest.');
   const abi = reviewedAbi(strictJson(abiText), m.source.variant);
   return { manifest: m, manifestSha256: sha(manifestText), abiSha256: sha(abiText), abi, contract: new Contract({ id: m.contract.address, abi }) };
@@ -155,12 +155,14 @@ export async function mergePackages(ctx: VortexContext, packages: VortexPackage[
 
 const RPC_METHODS = new Set(['chain.get_chain_id', 'chain.get_head_info', 'chain.invoke_system_call', 'chain.read_contract', 'chain.get_account_nonce', 'chain.get_account_rc', 'chain.submit_transaction', 'contract_meta_store.get_contract_meta', 'transaction_store.get_transactions_by_id', 'block_store.get_blocks_by_id', 'block_store.get_blocks_by_height']);
 export class VortexProvider extends Provider {
-  constructor(readonly rpc: string) {
-    super(rpc); const u = new URL(rpc);
-    requireValue(u.protocol === 'http:' && ['127.0.0.1', '[::1]'].includes(u.hostname) && !u.username && !u.password && !u.hash && !u.search, 'Use an explicit loopback HTTP RPC for this local qualification build.');
+  witness?: VortexProvider;
+  constructor(readonly rpc: string, readonly profile: NetworkProfile = 'local', readonly readOnly = false) {
+    super(rpc); rpcUrl(rpc, profile);
+    requireValue(profile !== 'mainnet' || process.env.NODE_TLS_REJECT_UNAUTHORIZED !== '0', 'Mainnet requires TLS certificate verification.');
   }
   async call<T = any>(method: string, params: any): Promise<T> {
     requireValue(RPC_METHODS.has(method), 'Unsupported Vortex RPC method.');
+    requireValue(!this.readOnly || method !== 'chain.submit_transaction', 'Corroborating RPC is read-only.');
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch(this.rpc, { method: 'POST', redirect: 'error', signal: controller.signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
@@ -172,6 +174,47 @@ export class VortexProvider extends Provider {
     } catch { throw new RefusalError('Vortex RPC request failed (response details withheld).'); }
     finally { clearTimeout(timer); controller.abort(); }
   }
+}
+export function vortexProvider(ctx: VortexContext, rpc: string, corroboratingRpc?: string): VortexProvider {
+  const profile = ctx.manifest.network.name as NetworkProfile;
+  const provider = new VortexProvider(rpc, profile);
+  if (profile === 'mainnet') {
+    const urls = ctx.manifest.network.rpcs!.map(r => r.url);
+    requireValue(corroboratingRpc && rpc !== corroboratingRpc && urls.includes(rpc) && urls.includes(corroboratingRpc), 'Explicit primary and corroborating RPCs must match the authenticated manifest.');
+    provider.witness = new VortexProvider(corroboratingRpc, profile, true);
+  } else requireValue(!corroboratingRpc, 'Local profiles do not accept a public corroborating RPC.');
+  return provider;
+}
+function witnessFor(ctx: VortexContext, provider: Provider): VortexProvider | undefined {
+  if (ctx.manifest.network.name !== 'mainnet') return undefined;
+  requireValue(provider instanceof VortexProvider && provider.profile === 'mainnet' && !provider.readOnly && provider.witness?.readOnly, 'Mainnet requires the explicitly bound two-RPC provider.');
+  const p = provider as VortexProvider, urls = ctx.manifest.network.rpcs!.map(r => r.url);
+  requireValue(p.witness && p.rpc !== p.witness.rpc && urls.includes(p.rpc) && urls.includes(p.witness.rpc), 'RPC binding changed from the reviewed manifest.');
+  return p.witness;
+}
+async function observe<T>(ctx: VortexContext, provider: Provider, read: (p: Provider) => Promise<T>): Promise<{ value: T; head: any }> {
+  const witness = witnessFor(ctx, provider);
+  const collect = (p: Provider) => stableRead(p, ctx.manifest.contract.address, !!witness, async () => { await chainBinding(ctx, p); return read(p); }, ctx.manifest.policy.payer);
+  const primary = await collect(provider);
+  if (witness) {
+    const second = await collect(witness);
+    requireValue(sameObservedState(primary.value, second.value), 'Independent RPCs disagree on the protected bridge state.');
+    await corroborate(provider, witness, primary.head, second.head);
+    const first = uint(primary.before.head_topology.height) <= uint(second.before.head_topology.height) ? primary.before : second.before;
+    const secondIsLater = uint(second.head.head_topology.height) > uint(primary.head.head_topology.height);
+    await unchangedInterval(secondIsLater ? witness : provider, ctx.manifest.contract.address, first, secondIsLater ? second.head : primary.head, false, ctx.manifest.policy.payer);
+    if (secondIsLater) primary.head = second.head;
+  }
+  return primary;
+}
+function includedReceipt(block: any, pkg: VortexPackage, id: string): any {
+  const included = block.block?.transactions?.find((t: any) => t.id === id), receipt = block.receipt?.transaction_receipts?.find((t: any) => t.id === id);
+  requireValue(included && receipt && typeof (receipt.reverted ?? false) === 'boolean', 'Inclusion transaction or receipt does not match the reviewed package.');
+  const exact = structuredClone(included);
+  // Normalize only the known protobuf empty-call-args default.
+  if (exact.operations?.length === 1 && exact.operations[0].call_contract && !Object.prototype.hasOwnProperty.call(exact.operations[0].call_contract, 'args')) exact.operations[0].call_contract.args = '';
+  requireValue(canonical(exact) === canonical(pkg.transaction) && transactionId(exact) === id, 'Inclusion transaction or receipt does not match the reviewed package.');
+  return receipt;
 }
 async function getObject(provider: Provider, space: any, key: string, next = false): Promise<any> {
   const args = utils.encodeBase64url(await kernel.serialize({ space, key }, 'Query'));
@@ -212,18 +255,22 @@ async function members(ctx: VortexContext, provider: Provider, id: number): Prom
   }
   throw new RefusalError('Membership exceeds the reviewed bound.');
 }
-async function snapshot(ctx: VortexContext, provider: Provider, call: any): Promise<any> {
-  ctx.contract.provider = provider; const before = await provider.getHeadInfo();
-  const config = await bridgeResult(ctx, 'get_config'); const paused = (await bridgeResult(ctx, 'is_paused')).value;
-  const admins = await members(ctx, provider, 201); const validators = await members(ctx, provider, 100);
-  const decoded = await decodeExact(ctx.contract, call); let hash: string | null = null;
-  if (decoded.name === 'propose') hash = actionHash(decoded.args.entryPoint, utils.encodeBase64url(Buffer.from(decoded.args.args.replace(/^0x/, ''), 'hex')));
-  if (['unpause', 'recover_validators'].includes(decoded.name)) hash = actionHash(call.entry_point, call.args);
-  if (decoded.name === 'cancel') hash = decoded.args.actionHash;
-  const proposal = hash ? { hash, ...await bridgeResult(ctx, 'get_proposal', { actionHash: hash }) } : null;
-  const after = await provider.getHeadInfo(); requireValue(before.head_state_merkle_root === after.head_state_merkle_root, 'State changed during preflight; prepare/recheck again.');
-  const snap = { config, paused, admins, validators, head: { id: after.head_topology.id, height: after.head_topology.height, time: after.head_block_time, lib: after.last_irreversible_block }, proposal };
-  snapshotValid(ctx, snap); return snap;
+async function snapshot(ctx: VortexContext, provider: Provider, call: any, rcLimit: string): Promise<{ snapshot: any; nonce: bigint }> {
+  const observed = await observe(ctx, provider, async p => {
+    ctx.contract.provider = p;
+    const config = await bridgeResult(ctx, 'get_config'); const paused = (await bridgeResult(ctx, 'is_paused')).value;
+    const admins = await members(ctx, p, 201); const validators = await members(ctx, p, 100);
+    const decoded = await decodeExact(ctx.contract, call); let hash: string | null = null;
+    if (decoded.name === 'propose') hash = actionHash(decoded.args.entryPoint, utils.encodeBase64url(Buffer.from(decoded.args.args.replace(/^0x/, ''), 'hex')));
+    if (['unpause', 'recover_validators'].includes(decoded.name)) hash = actionHash(call.entry_point, call.args);
+    if (decoded.name === 'cancel') hash = decoded.args.actionHash;
+    const proposal = hash ? { hash, ...await bridgeResult(ctx, 'get_proposal', { actionHash: hash }) } : null;
+    const payerNonce = await payerState(ctx, p, rcLimit);
+    return { config, paused, admins: admins.sort(), validators: validators.sort(), proposal, payerNonce: payerNonce.toString() };
+  });
+  const after = observed.head, { payerNonce, ...value } = observed.value;
+  const snap = { ...value, head: { id: after.head_topology.id, height: after.head_topology.height, time: after.head_block_time, lib: after.last_irreversible_block } };
+  snapshotValid(ctx, snap); return { snapshot: snap, nonce: uint(payerNonce) };
 }
 export async function encodeAction(ctx: VortexContext, action: string, args: any, propose = false): Promise<any> {
   requireValue(['pause', 'unpause', 'recover_validators', 'cancel'].includes(action), 'Unsupported administration action.');
@@ -241,41 +288,46 @@ export async function encodeAction(ctx: VortexContext, action: string, args: any
 async function payerNonce(provider: Provider, payer: string): Promise<bigint> {
   const { nonce } = await provider.call<any>('chain.get_account_nonce', { account: payer }); return nonce ? nonceValue(nonce) : 0n;
 }
+async function payerState(ctx: VortexContext, provider: Provider, rcLimit: string): Promise<bigint> {
+  const payer = ctx.manifest.policy.payer, nonce = await payerNonce(provider, payer);
+  requireValue(uint(rcLimit, true) <= uint(await provider.getAccountRc(payer)), 'Payer Mana is insufficient.');
+  requireValue(nonce === await payerNonce(provider, payer), 'Payer nonce changed during preflight.');
+  return nonce;
+}
 export async function prepareVortex(ctx: VortexContext, provider: Provider, operation: any, rcLimit: string): Promise<VortexPackage> {
-  await chainBinding(ctx, provider); const snap = await snapshot(ctx, provider, operation.call_contract);
-  const mana = uint(await provider.getAccountRc(ctx.manifest.policy.payer)); requireValue(uint(rcLimit, true) <= mana, 'Payer Mana is insufficient.');
-  const nextNonce = await payerNonce(provider, ctx.manifest.policy.payer) + 1n; requireValue(nextNonce <= 0xffffffffffffffffn, 'Payer nonce overflow.');
+  await chainBinding(ctx, provider); const observed = await snapshot(ctx, provider, operation.call_contract, rcLimit);
+  const nextNonce = observed.nonce + 1n; requireValue(nextNonce <= 0xffffffffffffffffn, 'Payer nonce overflow.');
   const transaction = await Transaction.prepareTransaction({ header: { chain_id: ctx.manifest.network.chainId, payer: ctx.manifest.policy.payer, rc_limit: rcLimit, nonce: utils.encodeBase64url(Buffer.concat([Buffer.from([40]), varint(nextNonce)])) }, operations: [operation], signatures: [] });
-  const pkg = { schema: 1, manifestSha256: ctx.manifestSha256, abiSha256: ctx.abiSha256, transaction, snapshot: snap };
+  const pkg = { schema: 1, manifestSha256: ctx.manifestSha256, abiSha256: ctx.abiSha256, transaction, snapshot: observed.snapshot };
   await reviewPackage(ctx, pkg); await chainBinding(ctx, provider); return pkg;
 }
 export async function preflightVortex(ctx: VortexContext, provider: Provider, pkg: VortexPackage): Promise<Review> {
   const review = await reviewPackage(ctx, pkg); requireValue(review.status === 'signature-requirements-satisfied', 'Missing administrator/recovery quorum or separate payer signature.');
-  await chainBinding(ctx, provider); const fresh = await snapshot(ctx, provider, pkg.transaction.operations[0].call_contract);
+  await chainBinding(ctx, provider); const { snapshot: fresh, nonce } = await snapshot(ctx, provider, pkg.transaction.operations[0].call_contract, pkg.transaction.header.rc_limit);
   requireValue(canonical(fresh.config) === canonical(pkg.snapshot.config) && fresh.paused === pkg.snapshot.paused && canonical(fresh.proposal) === canonical(pkg.snapshot.proposal), 'Reviewed authority/proposal state is stale. Prepare a new separately reviewed transaction.');
   await operationReview(ctx, pkg.transaction.operations[0].call_contract, fresh);
-  requireValue(nonceValue(pkg.transaction.header.nonce) === await payerNonce(provider, ctx.manifest.policy.payer) + 1n, 'Payer nonce is stale or already used; reconcile by transaction ID.');
-  requireValue(uint(pkg.transaction.header.rc_limit, true) <= uint(await provider.getAccountRc(ctx.manifest.policy.payer)), 'Payer Mana is insufficient.'); return review;
+  requireValue(nonceValue(pkg.transaction.header.nonce) === nonce + 1n && nonce === await payerNonce(provider, ctx.manifest.policy.payer), 'Payer nonce is stale or already used; reconcile by transaction ID.'); return review;
 }
 
 async function resultingState(ctx: VortexContext, provider: Provider, pkg: VortexPackage, review: Review): Promise<any> {
-  const before = await provider.getHeadInfo();
-  ctx.contract.provider = provider; const config: any = await bridgeResult(ctx, 'get_config'); const paused = (await bridgeResult(ctx, 'is_paused')).value;
-  const adminMembers = await members(ctx, provider, 201); const validatorMembers = await members(ctx, provider, 100);
-  requireValue(config.adminThreshold === ctx.manifest.policy.adminThreshold && config.recoveryThreshold === ctx.manifest.policy.recoveryThreshold && sameSet(adminMembers, ctx.manifest.policy.admins), 'Resulting authority changed unexpectedly.');
-  let proposal: any = null; const action = review.action;
-  if (action.proposalHash) proposal = await bridgeResult(ctx, 'get_proposal', { actionHash: action.proposalHash });
-  if (action.name === 'pause') requireValue(paused && uint(config.pauseNonce) === uint(pkg.snapshot.config.pauseNonce) + 1n, 'Pause result is not verified.');
-  if (action.name === 'unpause') requireValue(!paused && uint(proposal.eta) === 0n, 'Unpause result/proposal consumption is not verified.');
-  if (action.name === 'recover_validators') requireValue(sameSet(validatorMembers, action.args.validators) && uint(proposal.eta) === 0n, 'Recovery membership/proposal consumption is not verified.');
-  if (action.name === 'cancel') requireValue(uint(proposal.eta) === 0n, 'Cancellation result is not verified.');
-  if (action.name === 'propose') requireValue(uint(proposal.eta) >= uint(pkg.snapshot.head.time) + DELAY_MS && proposal.epoch === config.epoch && proposal.kind === (action.authority === 'recovery' ? 1 : 0) && uint(proposal.nonce) === uint(pkg.snapshot.config.proposalNonce) + 1n, 'Proposal schedule/epoch/nonce is not verified.');
-  const after = await provider.getHeadInfo();
-  requireValue(before.head_state_merkle_root === after.head_state_merkle_root, 'State changed during result verification; reconcile again.');
-  return { config, paused, admins: adminMembers, validators: validatorMembers, proposal };
+  const observed = await observe(ctx, provider, async p => {
+    provider = p;
+    ctx.contract.provider = provider; const config: any = await bridgeResult(ctx, 'get_config'); const paused = (await bridgeResult(ctx, 'is_paused')).value;
+    const adminMembers = await members(ctx, provider, 201); const validatorMembers = await members(ctx, provider, 100);
+    requireValue(config.adminThreshold === ctx.manifest.policy.adminThreshold && config.recoveryThreshold === ctx.manifest.policy.recoveryThreshold && sameSet(adminMembers, ctx.manifest.policy.admins), 'Resulting authority changed unexpectedly.');
+    let proposal: any = null; const action = review.action;
+    if (action.proposalHash) proposal = await bridgeResult(ctx, 'get_proposal', { actionHash: action.proposalHash });
+    if (action.name === 'pause') requireValue(paused && uint(config.pauseNonce) === uint(pkg.snapshot.config.pauseNonce) + 1n, 'Pause result is not verified.');
+    if (action.name === 'unpause') requireValue(!paused && uint(proposal.eta) === 0n, 'Unpause result/proposal consumption is not verified.');
+    if (action.name === 'recover_validators') requireValue(sameSet(validatorMembers, action.args.validators) && uint(proposal.eta) === 0n, 'Recovery membership/proposal consumption is not verified.');
+    if (action.name === 'cancel') requireValue(uint(proposal.eta) === 0n, 'Cancellation result is not verified.');
+    if (action.name === 'propose') requireValue(uint(proposal.eta) >= uint(pkg.snapshot.head.time) + DELAY_MS && proposal.epoch === config.epoch && proposal.kind === (action.authority === 'recovery' ? 1 : 0) && uint(proposal.nonce) === uint(pkg.snapshot.config.proposalNonce) + 1n, 'Proposal schedule/epoch/nonce is not verified.');
+    return { config, paused, admins: adminMembers.sort(), validators: validatorMembers.sort(), proposal };
+  });
+  return observed.value;
 }
 export async function reconcileVortex(ctx: VortexContext, provider: Provider, pkg: VortexPackage): Promise<any> {
-  const review = await reviewPackage(ctx, pkg); await chainBinding(ctx, provider);
+  const review = await reviewPackage(ctx, pkg); const witness = witnessFor(ctx, provider); await chainBinding(ctx, provider);
   const records = await provider.getTransactionsById([review.id]); const record = records.transactions?.find(t => t.transaction?.id === review.id);
   if (!record?.containing_blocks?.length) return { status: 'submission-outcome-unknown', id: review.id, message: 'No canonical inclusion proved. Do not rebuild or resend automatically.' };
   const head = await provider.getHeadInfo();
@@ -285,18 +337,24 @@ export async function reconcileVortex(ctx: VortexContext, provider: Provider, pk
     const height = uint(block.block_height); requireValue(height <= BigInt(Number.MAX_SAFE_INTEGER), 'Block height exceeds supported range.');
     const canonicalBlocks = await provider.getBlocks(Number(height), 1, head.head_topology.id, { returnBlock: false, returnReceipt: false });
     if (canonicalBlocks[0]?.block_id !== id) continue;
-    const included = block.block.transactions?.find(t => t.id === review.id); const receipt = block.receipt.transaction_receipts?.find(t => t.id === review.id);
-    requireValue(included && receipt, 'Inclusion transaction or receipt does not match the reviewed package.');
-    const exact = structuredClone(included);
-    // Native protobuf JSON omits empty call args. That one known wire default
-    // is equivalent to the SDK's empty string; every other body field stays exact.
-    if (exact.operations?.length === 1 && exact.operations[0].call_contract && !Object.prototype.hasOwnProperty.call(exact.operations[0].call_contract, 'args')) exact.operations[0].call_contract.args = '';
-    requireValue(canonical(exact) === canonical(pkg.transaction) && transactionId(exact) === review.id, 'Inclusion transaction or receipt does not match the reviewed package.');
+    const receipt = includedReceipt(block, pkg, review.id);
+    let irreversible = uint(head.last_irreversible_block) >= height;
+    if (witness) {
+      const witnessHead = await witness.getHeadInfo(); await corroborate(provider, witness, head, witnessHead);
+      const corroboratedBlock = await canonicalBlock(witness, witnessHead, height, true);
+      requireValue(corroboratedBlock.block_id === id && (includedReceipt(corroboratedBlock, pkg, review.id).reverted ?? false) === (receipt.reverted ?? false), 'Independent RPC disagrees on transaction inclusion or receipt.');
+      irreversible = irreversible && uint(witnessHead.last_irreversible_block) >= height;
+    }
     if (receipt.reverted) return { status: 'reverted', id: review.id, block: id, height: block.block_height };
-    if (uint(head.last_irreversible_block) < height) return { status: 'included-successfully', id: review.id, block: id, height: block.block_height, irreversible: false };
+    if (!irreversible) return { status: 'included-successfully', id: review.id, block: id, height: block.block_height, irreversible: false };
     const result = await resultingState(ctx, provider, pkg, review);
     const finalHead = await provider.getHeadInfo(); const finalCanonical = await provider.getBlocks(Number(height), 1, finalHead.head_topology.id, { returnBlock: false, returnReceipt: false });
     requireValue(finalCanonical[0]?.block_id === id && uint(finalHead.last_irreversible_block) >= height, 'Canonical finality changed during reconciliation.');
+    if (witness) {
+      const witnessHead = await witness.getHeadInfo();
+      await corroborate(provider, witness, finalHead, witnessHead, height);
+      requireValue((await canonicalBlock(witness, witnessHead, height)).block_id === id, 'Independent RPC does not corroborate this transaction block.');
+    }
     return { status: 'irreversible-and-state-verified', id: review.id, block: id, height: block.block_height, result };
   }
   return { status: 'submission-outcome-unknown', id: review.id, message: 'No canonical inclusion proved. Reconcile again; do not automatically resend.' };
@@ -311,7 +369,6 @@ export async function submitVortex(ctx: VortexContext, provider: Provider, pkg: 
   try { response = await provider.call('chain.submit_transaction', { transaction: pkg.transaction, broadcast: true }); }
   catch { return { status: 'submission-outcome-unknown', id: review.id, message: 'Send result is unknown. Use vortex reconcile with this exact package.' }; }
   if (response?.receipt?.id !== review.id || response.receipt.rpc_error) return { status: 'submission-outcome-unknown', id: review.id };
-  if (response.receipt.reverted) return { status: 'reverted', id: review.id };
   const end = Date.now() + timeoutMs; let result: any = { status: 'submission-outcome-unknown', id: review.id };
   do {
     try { result = await reconcileVortex(ctx, provider, pkg); } catch { return { status: 'submission-outcome-unknown', id: review.id, message: 'Readback failed. Reconcile; do not resend.' }; }

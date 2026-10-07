@@ -11,10 +11,11 @@ import * as https from 'https';
 import { lookup as dnsLookup } from 'dns/promises';
 import * as readlineSync from 'readline-sync';
 import { execSync } from 'child_process';
-import { ethers } from 'ethers';
+import { HDNode } from '@ethersproject/hdnode';
 import tokenAbi from './abis/token.json';
 import pobAbi from './abis/pob.json';
 import packageJson from '../package.json';
+import { FundClient, assertFundNetwork, formatFundVotes, parsePercentage, parsePositiveInteger, parseProjectId, PROJECT_STATUSES, terminalText, timestampIso } from './fund';
 import { registerVortexCommands } from './vortex-cli';
 import { DashboardProvider, dashboardError, parseDashboardInteger } from './dashboard-rpc';
 import { DashboardProducerData, dashboardAge, dashboardValue, dashboardWholeUnits } from './dashboard-data';
@@ -24,8 +25,14 @@ const CLI_VERSION = packageJson.version;
 
 const LATEST_CHANGES = [
   'producer-dashboard now bounds RPC sockets, staggers cached reads and preserves independent last-good balances.',
+  'Added restricted Vortex mainnet profiles with authenticated review and two explicitly reviewed HTTPS RPCs.',
+  'Vortex preflight supports advancing heads with protected-state receipt checks and independent finality corroboration.',
   'Added named encrypted wallets with hidden local secret input.',
-  'Added local-only Vortex V2 detached signing, separate payer, submission and reconciliation.',
+  'Added Vortex V2 detached signing, separate payer, submission and reconciliation.',
+  'Added fund-info, proposals, proposal, votes, and vote commands for Koinos Fund System projects.',
+  'Fund voting supports password-free dry-runs, allocation checks, and post-inclusion verification.',
+  'Added the expected mainnet chain ID to transaction network checks.',
+  'Added --no-wait and --nonce to transfer commands for deterministic burst testing.',
   'Added --password-file and --yes for non-interactive wallet operations.',
   'Added transfer and token-transfer commands with dry-run support.',
   'Added official Koinos Foundation testnet support.',
@@ -63,6 +70,7 @@ interface NetworkContracts {
   koin?: string;
   vhp?: string;
   pob?: string;
+  fund?: string;
 }
 
 interface NetworkDefinition {
@@ -80,10 +88,12 @@ const NETWORKS: Record<string, NetworkDefinition> = {
     name: 'mainnet',
     label: 'Koinos Mainnet',
     rpc: DEFAULT_RPC,
+    chainId: 'EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==',
     contracts: {
       koin: '19GYjDBVXU7keLbYvMLazsGQn3GTWHjHkK',
       vhp: '12Y5vW6gk8GceH53YfRkRre2Rrcsgw7Naq',
       pob: '159myq5YUhhoVWu3wsHKHiJYKPKGUrGiyv',
+      fund: '1A5BmMqV5jN5zBrdkhQumAfDZBzXLPBeN9',
     },
   },
   testnet: {
@@ -127,6 +137,11 @@ interface WalletUnlockOptions {
 
 interface ConfirmationOptions {
   yes?: boolean;
+}
+
+interface TransactionControlOptions {
+  wait?: boolean;
+  nonce?: string;
 }
 
 // Load config file
@@ -814,7 +829,7 @@ async function executeTokenTransfer(
   contractId: string,
   to: string,
   amount: string,
-  options: { dryRun?: boolean } & WalletUnlockOptions & ConfirmationOptions,
+  options: { dryRun?: boolean } & WalletUnlockOptions & ConfirmationOptions & TransactionControlOptions,
 ): Promise<void> {
   if (!isValidAddress(to)) {
     console.log('\n❌ Invalid recipient address format.');
@@ -919,7 +934,9 @@ async function executeTokenTransfer(
     });
 
     await transaction.pushOperation(transferOp);
-    await transaction.prepare();
+    await transaction.prepare({
+      ...(options.nonce && { nonce: options.nonce }),
+    });
     if (!assertPreparedTransactionNetwork(context, transaction)) return;
 
     console.log('\n💸 Transfer Summary:');
@@ -973,12 +990,18 @@ async function executeTokenTransfer(
       }
     }
 
-    console.log('\n⏳ Waiting for transaction to be included in a block...');
-    try {
-      const blockInfo = await transaction.wait('byTransactionId', 60000);
-      console.log(`   ✅ Transaction confirmed in block ${blockInfo?.blockNumber || 'unknown'}`);
-    } catch (waitError: any) {
-      console.log('   ⚠️  Could not confirm transaction (timeout). Balances may not be updated yet.');
+    if (options.wait !== false) {
+      console.log('\n⏳ Waiting for transaction to be included in a block...');
+      try {
+        const blockInfo = await transaction.wait('byTransactionId', 60000);
+        console.log(`   ✅ Transaction confirmed in block ${blockInfo?.blockNumber || 'unknown'}`);
+      } catch (waitError: any) {
+        console.log('   ⚠️  Could not confirm transaction (timeout). Balances may not be updated yet.');
+      }
+    } else {
+      console.log('\n⏭️  Skipped confirmation wait (--no-wait).');
+      console.log('   Use block/transaction regression checks to verify inclusion.');
+      return;
     }
 
     const { result: newSenderBalanceResult } = await token.functions.balance_of({ owner: wallet.address });
@@ -1009,7 +1032,9 @@ program
   .option('--dry-run', 'Show transaction details without signing or submitting')
   .option('--password-file <path>', 'Read wallet password from a local 0600 file')
   .option('-y, --yes', 'Skip confirmation prompt')
-  .action(async (to: string, amount: string, options: { dryRun?: boolean } & WalletUnlockOptions & ConfirmationOptions) => {
+  .option('--no-wait', 'Do not wait for block inclusion after submission')
+  .option('--nonce <base64url>', 'Use an explicit base64url-encoded transaction nonce')
+  .action(async (to: string, amount: string, options: { dryRun?: boolean } & WalletUnlockOptions & ConfirmationOptions & TransactionControlOptions) => {
     const resolved = createProviderFromOptions();
     if (!resolved) return;
     const { context, provider } = resolved;
@@ -1029,7 +1054,9 @@ program
   .option('--dry-run', 'Show transaction details without signing or submitting')
   .option('--password-file <path>', 'Read wallet password from a local 0600 file')
   .option('-y, --yes', 'Skip confirmation prompt')
-  .action(async (contractId: string, to: string, amount: string, options: { dryRun?: boolean } & WalletUnlockOptions & ConfirmationOptions) => {
+  .option('--no-wait', 'Do not wait for block inclusion after submission')
+  .option('--nonce <base64url>', 'Use an explicit base64url-encoded transaction nonce')
+  .action(async (contractId: string, to: string, amount: string, options: { dryRun?: boolean } & WalletUnlockOptions & ConfirmationOptions & TransactionControlOptions) => {
     const resolved = createProviderFromOptions();
     if (!resolved) return;
     const { context, provider } = resolved;
@@ -1040,6 +1067,193 @@ program
     }
 
     await executeTokenTransfer(context, provider, contractId, to, amount, options);
+  });
+
+interface FundOptions {
+  fundContract?: string;
+  json?: boolean;
+}
+
+function fundError(error: unknown): void {
+  console.error(`Error: ${terminalText(error instanceof Error ? error.message : String(error))}`);
+  process.exitCode = 1;
+}
+
+async function connectFund(options: FundOptions) {
+  const context = resolveNetworkContext();
+  const provider = getProvider(context);
+  const fund = await FundClient.connect(context, provider, options.fundContract);
+  return { context, provider, fund };
+}
+
+function fundOutput(options: FundOptions, data: Record<string, unknown>, render: () => void): void {
+  if (options.json) console.log(JSON.stringify(data, null, 2));
+  else render();
+}
+
+function fundCommand(name: string, description: string): Command {
+  return program.command(name).description(description)
+    .option('--fund-contract <address>', 'Override the fund contract for a verified deployment');
+}
+
+fundCommand('fund-info', 'Read Koinos Fund System settings')
+  .option('--json', 'Print JSON')
+  .action(async (options: FundOptions) => {
+    try {
+      const { context, fund } = await connectFund(options);
+      const globals = await fund.globals();
+      const balances = await fund.balances(fund.contract.getId());
+      fundOutput(options, { network: context.networkName, rpc: context.rpc, contract: fund.contract.getId(), ...globals, balances }, () => {
+        console.log(`Koinos Fund System (${context.networkName})`);
+        console.log(`Contract: ${fund.contract.getId()}`);
+        console.log(`Projects: ${globals.total_projects} total, ${globals.total_active_projects} active, ${globals.total_upcoming_projects} upcoming`);
+        console.log(`Fund balance: ${utils.formatUnits(balances.koin, 8)} KOIN`);
+        console.log(`Remaining balance (contract accounting): ${utils.formatUnits(globals.remaining_balance, 8)} KOIN`);
+        console.log(`Payment times: ${globals.payment_times.map(timestampIso).join(', ') || '(none)'}`);
+      });
+    } catch (error) { fundError(error); }
+  });
+
+fundCommand('proposals', 'List Koinos Fund System projects')
+  .option('--status <status>', 'Project status: active, upcoming, or past', 'active')
+  .option('--order <order>', 'Order by votes or date (past projects use date)')
+  .option('--ascending', 'Sort in ascending order')
+  .option('--limit <count>', 'Page size (1-100)', '20')
+  .option('--cursor <cursor>', 'Continue from a returned pagination cursor')
+  .option('--all', 'Read all pages for the selected status')
+  .option('--json', 'Print JSON with raw contract values')
+  .action(async (options: FundOptions & { status: string; order?: string; ascending?: boolean; limit: string; cursor?: string; all?: boolean }) => {
+    try {
+      const limit = parsePositiveInteger(options.limit, 'Page limit', 100);
+      const { context, fund } = await connectFund(options);
+      const page = await fund.projects({ ...options, limit, order: options.order || (options.status === 'past' ? 'date' : 'votes'), descending: !options.ascending });
+      fundOutput(options, { network: context.networkName, contract: fund.contract.getId(), ...page }, () => {
+        console.log(`KFS ${options.status} projects (${context.networkName})`);
+        for (const project of page.projects) {
+          console.log(`${project.id}  ${terminalText(project.title)}  | ${formatFundVotes(project.total_votes)} votes | ${utils.formatUnits(project.monthly_payment, 8)} KOIN/month`);
+        }
+        if (!page.projects.length) console.log('No projects found.');
+        if (page.nextCursor) console.log(`Next cursor: ${page.nextCursor}`);
+      });
+    } catch (error) { fundError(error); }
+  });
+
+fundCommand('proposal <id>', 'Read a Koinos Fund System project')
+  .option('--json', 'Print JSON with raw contract values')
+  .action(async (idArg: string, options: FundOptions) => {
+    try {
+      const id = parseProjectId(idArg);
+      const { context, fund } = await connectFund(options);
+      const project = await fund.project(id);
+      fundOutput(options, { network: context.networkName, contract: fund.contract.getId(), project }, () => {
+        console.log(`Project ${id}: ${terminalText(project.title)}`);
+        console.log(`Status: ${Object.keys(PROJECT_STATUSES).find(key => PROJECT_STATUSES[key] === project.status) || 'unknown'}`);
+        console.log(`Creator: ${project.creator}`);
+        console.log(`Beneficiary: ${project.beneficiary}`);
+        console.log(`Monthly payment: ${utils.formatUnits(project.monthly_payment, 8)} KOIN`);
+        console.log(`Dates: ${timestampIso(project.start_date)} to ${timestampIso(project.end_date)}`);
+        console.log(`Votes: ${formatFundVotes(project.total_votes)}`);
+        console.log(terminalText(project.description));
+      });
+    } catch (error) { fundError(error); }
+  });
+
+fundCommand('votes [address]', 'Read an account\'s Koinos Fund System allocations')
+  .option('--json', 'Print JSON with raw contract timestamps')
+  .action(async (addressArg: string | undefined, options: FundOptions) => {
+    try {
+      const address = addressArg || loadWalletFile()?.address || loadConfig().defaultAccount;
+      if (!address || !isValidAddress(address)) throw new Error('Provide a valid voter address or import/configure an account.');
+      const { context, fund } = await connectFund(options);
+      const votes = await fund.votes(address);
+      const allocated = votes.reduce((sum, vote) => sum + vote.weight * 5, 0);
+      fundOutput(options, { network: context.networkName, contract: fund.contract.getId(), voter: address, allocated_percent: allocated, votes }, () => {
+        console.log(`KFS votes for ${address} (${context.networkName})`);
+        for (const vote of votes) {
+          console.log(`Project ${vote.project_id}: ${vote.weight * 5}% | expires ${timestampIso(vote.expiration)}${BigInt(vote.expiration) <= BigInt(Date.now()) ? ' (expired)' : ''}`);
+        }
+        console.log(`Recorded allocation: ${allocated}% (includes expired records until removed/updated).`);
+      });
+    } catch (error) { fundError(error); }
+  });
+
+fundCommand('vote <id>', 'Update, renew, or remove a Koinos Fund System vote')
+  .requiredOption('--percent <percent>', 'Allocation from 0 to 100 in steps of 5; 0 removes a vote')
+  .option('--address <address>', 'Public voter address for dry-run only')
+  .option('--dry-run', 'Prepare without unlocking, signing, or submitting')
+  .option('--rc-limit <units>', 'RC limit in base units (default: 10% of available mana)')
+  .option('--password-file <path>', 'Read wallet password from a local 0600 file')
+  .option('-y, --yes', 'Skip the VOTE confirmation prompt')
+  .option('--no-wait', 'Return after submission without inclusion/readback verification')
+  .option('--wait-timeout <seconds>', 'Inclusion timeout (1-300 seconds)', '60')
+  .action(async (idArg: string, options: FundOptions & WalletUnlockOptions & ConfirmationOptions & {
+    percent: string; address?: string; dryRun?: boolean; rcLimit?: string; wait?: boolean; waitTimeout: string;
+  }) => {
+    try {
+      const id = parseProjectId(idArg);
+      const percent = parsePercentage(options.percent);
+      const timeout = parsePositiveInteger(options.waitTimeout, 'Wait timeout', 300) * 1000;
+      if (options.address && !options.dryRun) throw new Error('--address is only available with --dry-run. Signed votes use the imported wallet.');
+      const address = options.address || loadWalletFile()?.address || (options.dryRun ? loadConfig().defaultAccount : undefined);
+      if (!address || !isValidAddress(address)) throw new Error('Import a wallet or supply --address for a dry-run.');
+      const { context, provider, fund } = await connectFund(options);
+      const prepared = await fund.prepareVote(id, percent, address, options.rcLimit);
+      const { transaction, allocation } = prepared;
+      const txId = transaction.transaction.id!;
+      console.log('KFS Vote Summary (unsigned)');
+      console.log(`Network: ${context.networkName}`);
+      console.log(`RPC: ${context.rpc}`);
+      console.log(`Fund contract: ${fund.contract.getId()}`);
+      console.log(`Voter: ${address}`);
+      console.log(`Project ${id}: ${terminalText(prepared.project.title)}`);
+      console.log(`Allocation: ${(allocation.previous?.weight || 0) * 5}% -> ${percent}%`);
+      console.log(`Total recorded allocation: ${allocation.usedWeight * 5}% -> ${allocation.totalWeight * 5}%`);
+      console.log(`Balances: ${utils.formatUnits(prepared.balances.koin, 8)} KOIN, ${utils.formatUnits(prepared.balances.vhp, 8)} VHP`);
+      console.log(`Available mana: ${utils.formatUnits(prepared.availableMana, 8)}`);
+      if (percent > 0 && prepared.expiration) console.log(`Expected expiration: ${timestampIso(prepared.expiration)}`);
+      console.log(JSON.stringify(transaction.transaction, null, 2));
+      if (options.dryRun) {
+        console.log('Dry run: wallet not unlocked; transaction not signed or submitted. Contract execution is not simulated.');
+        return;
+      }
+      if (!options.yes && readlineSync.question('Type "VOTE" to confirm: ') !== 'VOTE') {
+        console.log('Vote cancelled.');
+        return;
+      }
+      await assertFundNetwork(context, provider);
+      const wallet = loadWallet(getWalletPassword(options));
+      if (!wallet || wallet.address !== address) throw new Error('Imported wallet changed during vote preparation.');
+      const signer = Signer.fromWif(wallet.privateKey);
+      if (signer.getAddress() !== address) throw new Error('Wallet key does not match its recorded voter address.');
+      signer.provider = provider;
+      transaction.signer = signer;
+      await transaction.sign();
+      const receipt = await transaction.send();
+      if (receipt.rpc_error) throw new Error(`Submission outcome is unknown for ${txId}. Check inclusion before retrying.`);
+      if (receipt.id !== txId || receipt.reverted) throw new Error(`Vote transaction ${txId} was rejected or reverted. ${receipt.logs?.map(terminalText).join(' ') || ''}`);
+      console.log(`Vote submitted: ${txId}`);
+      if (options.wait === false) {
+        console.log('Inclusion and allocation readback have not been verified (--no-wait).');
+        return;
+      }
+      let inclusion;
+      try { inclusion = await transaction.wait('byTransactionId', timeout); }
+      catch {
+        console.error(`Inclusion is unconfirmed for ${txId}. Check the transaction before retrying; it may still be included.`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(`Included in block ${inclusion.blockNumber || inclusion.blockId} (not irreversible finality).`);
+      const blocks = await provider.getBlocksById([inclusion.blockId], { returnBlock: false, returnReceipt: true });
+      const includedReceipt = blocks.block_items?.find(block => block.block_id === inclusion.blockId)?.receipt?.transaction_receipts?.find(item => item.id === txId);
+      if (!includedReceipt) throw new Error(`Included transaction ${txId} has no available block receipt; execution is unverified.`);
+      if (includedReceipt.reverted) throw new Error(`Included vote ${txId} reverted. ${includedReceipt.logs?.map(terminalText).join(' ') || ''}`);
+      const current = (await fund.votes(address)).find(vote => vote.project_id === id);
+      if (percent === 0 ? !!current : current?.weight !== allocation.newWeight) {
+        throw new Error(`Allocation readback does not match transaction ${txId}. Inspect current votes before retrying.`);
+      }
+      console.log(`Allocation readback verified: ${percent}%${current ? `, expires ${timestampIso(current.expiration)}` : ' (removed)'}.`);
+    } catch (error) { fundError(error); }
   });
 
 // Generate new wallet
@@ -1071,8 +1285,8 @@ program
         return;
       }
       
-      // Use ethers HDNode (same as Kondor wallet)
-      const hdNode = ethers.utils.HDNode.fromMnemonic(seedPhrase);
+      // Use the same ethers v5 HDNode implementation as Kondor.
+      const hdNode = HDNode.fromMnemonic(seedPhrase);
       
       console.log(`\n🔑 Derived Accounts from Seed Phrase (${numAccounts} accounts):`);
       console.log('─'.repeat(70));
@@ -1350,9 +1564,16 @@ program
         public_key: publicKey,
       }, { onlyOperation: true });
 
+      const availableMana = await provider.getAccountRc(wallet.address);
+      const manaValue = availableMana ? BigInt(availableMana) : BigInt(0);
+      const rcLimit = manaValue > BigInt(0) ? (manaValue * BigInt(10)) / BigInt(100) : BigInt(0);
+
       const transaction = new Transaction({
         signer,
         provider,
+        options: {
+          ...(rcLimit > BigInt(0) && { rcLimit: rcLimit.toString() }),
+        },
       });
 
       await transaction.pushOperation(registerKeyOp);

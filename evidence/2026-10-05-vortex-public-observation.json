@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "observationDate": "2026-10-05",
+  "readOnly": true,
+  "realWalletAccessed": false,
+  "publicTransactionSubmitted": false,
+  "approvedDeployment": false,
+  "independentRpcPairQualified": false,
+  "observedChainId": "EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==",
+  "observedHeadHeight": "39940284",
+  "observedLibHeight": "39940224",
+  "headBlockTimeMs": "1791177361650",
+  "candidateAbiSha256": "21a0e0a941e169865f02fc437b0a933fe4c2091276aef8814f09b8bee940e115",
+  "candidateAbiCompatibleWithPinnedMigrationAdapter": false,
+  "candidateAbiCompatibleWithFreshInitializerAdapter": false,
+  "rawCandidateWasmVerificationAvailable": false,
+  "authorityMetadataObjectPresent": true,
+  "candidateQualified": false,
+  "limitations": [
+    "Single public RPC observation, not independent operational qualification.",
+    "Raw-code RPC read failed; its cause was not independently diagnosed.",
+    "No source/code/policy/custody mapping or approved deployment was established.",
+    "No address veto is applied; qualification is based on verification capabilities and compatibility."
+  ]
+}

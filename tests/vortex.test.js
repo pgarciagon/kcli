@@ -59,6 +59,25 @@ test('pinned policy refuses release drift, public networks, role collisions and 
   const { manifest } = X.fixture(temp(t));
   for (const mutate of [m => m.source.commit = '00'.repeat(20), m => m.network.name = 'mainnet', m => m.policy.adminThreshold = 1, m => m.policy.recoveryThreshold = 2, m => m.policy.payer = m.policy.admins[0], m => m.policy.delayMs = '60000', m => m.policy.reviewed = false]) { const m = structuredClone(manifest); mutate(m); assert.throws(() => V.validateManifest(m)); }
 });
+test('bridge eligibility has no permanent address veto; compatibility and network guards remain', t => {
+  const dir = temp(t), { manifest, manifestFile, abiFile } = X.fixture(dir);
+  manifest.contract.address = '1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8';
+  assert.doesNotThrow(() => V.validateManifest(manifest));
+  for (const mutate of [m => m.contract.address = 'invalid', m => m.contract.address = m.policy.payer, m => m.contract.codeSha256 = 'invalid', m => m.policy.reviewed = false, m => m.network.chainId = 'EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==']) {
+    const changed = structuredClone(manifest); mutate(changed); assert.throws(() => V.validateManifest(changed));
+  }
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+  const local = V.loadVortex(manifestFile, abiFile);
+  assert.equal(local.contract.getId(), manifest.contract.address);
+  assert.throws(() => new V.VortexProvider('https://api.koinos.io'), /explicit loopback/);
+  const alteredAbi = structuredClone(local.manifest); alteredAbi.contract.abiSha256 = '00'.repeat(32);
+  fs.writeFileSync(manifestFile, JSON.stringify(alteredAbi));
+  assert.throws(() => V.loadVortex(manifestFile, abiFile), /ABI hash/);
+  manifest.network.name = 'mainnet'; fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+  const result = spawnSync('kcli', ['vortex', 'prepare', 'pause', '--network', 'mainnet', '--rpc', 'http://127.0.0.1:1', '--contract', manifest.contract.address, '--manifest', manifestFile, '--abi', abiFile, '--args', path.join(dir, 'absent.json'), '--rc-limit', '1', '--dry-run'], { encoding: 'utf8', env: { ...process.env, HOME: dir } });
+  assert.equal(result.status, 1); assert.match(result.stderr, /fields|public network profile/);
+  assert.equal(fs.existsSync(path.join(dir, '.kcli')), false);
+});
 test('ABI checks reject redirected entry points, incorrect types and authority', t => {
   const f = X.fixture(temp(t)); const abi = JSON.parse(f.abiText);
   for (const mutate of [a => a.methods.pause.entry_point++, a => a.methods.is_paused.read_only = false, a => a.types.nested.bridge.nested.pause_arguments.fields.expiry.type = 'uint32']) { const a = structuredClone(abi); mutate(a); assert.throws(() => P.reviewedAbi(a, 'pinned-migration')); }

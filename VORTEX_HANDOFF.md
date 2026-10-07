@@ -1,10 +1,78 @@
 # Vortex V2 Koinos CLI Handoff
 
-Updated 5 October 2026. Local implementation and qualification complete;
+Updated 7 October 2026. The restricted mainnet software is included in the
+[1.6.0 release](RELEASE_NOTES.md), together with KFS, transfer controls and the
+dashboard corrections. Production deployment/custody qualification is pending.
+The development checkpoints below remain historical evidence, not release-time
+public-chain or independent-custody qualification.
+
+## Current Mainnet Extension
+
+Pablo started the persistent goal with "Haz el goal". The CLI now implements
+local schema-1 and mainnet schema-2 profiles. Mainnet requires an exact Ed25519
+manifest attestation and independently trusted explicit SPKI fingerprint on
+every online/offline command. Two independently reviewed HTTPS RPCs are explicit
+and manifest-bound; only the primary can submit. Operator labels and URLs are
+review assertions, not automatic proof of independence.
+
+The protected read window includes code/authority/storage, payer nonce and
+sufficient Mana. Bounded canonical receipt deltas allow unrelated blocks to
+advance. Both RPCs must corroborate state, common canonical/LIB heights and
+exact included body/signatures/receipt plus resulting state. All earlier
+sign-only, quorum/payer, delay/window, durable-intent and no-resend boundaries
+remain. These checks trust reviewed nodes and complete recent receipts; they
+are not anchored historical reads or cryptographic state proofs.
+
+The 5 October checkout passed 69 tests: 25 KFS, 29 wallet/local-Vortex, 15 synthetic
+mainnet fixtures. Installed mainnet online/offline dry-runs use explicit fixture
+routing, not public submissions. Two new real local-chain repeats each passed
+18 checks; the final repeat includes nonce/Mana in the protected read window
+and records six irreversible authorized actions. The installed links report
+1.6.0. At that checkpoint no tag, push or registry release was authorized.
+The subsequent 7 October request explicitly includes KFS and transfer work in
+the GitHub software release; it does not authorize public-chain operations.
+
+Canonical new evidence: `evidence/2026-10-05-vortex-local-e2e-mainnet-extension.json`
+and `evidence/2026-10-05-vortex-public-observation.json` in the kcli project.
+The first bootstrap attempt hit Docker pool exhaustion; a fresh explicit
+internal subnet resolved it without deleting old resources. New containers
+and the dedicated lab VM are stopped; prior evidence/artifacts remain frozen.
+
+No approved compatible mainnet target or independently qualified public RPC
+pair is established. A read-only candidate observation did not satisfy either
+reviewed ABI adapter and raw code verification was unavailable. No existing
+address is categorically excluded; future bridge changes require an explicit
+source/code/ABI/policy review and matching CLI regression tests. Do not rewrite
+frozen Vortex deployment packages or earlier acceptance records to match.
+
+Real wallets, custody, public operations, funds, membership, deployment/setup,
+production hosts and Ethereum administration remain separate human-approved
+work. This handoff is documentation, not operation authorization.
+
+## Prior Local Delivery
+
+Local implementation and qualification were completed;
 source-only development work, not a tagged release. The user authorized
 committing and pushing the wallet/Vortex source on 5 October. This handoff is
 documentation, not signing, deployment,
 membership-change or production-operation authorization.
+
+## Parallel Development Decision, 5 October
+
+Pablo clarified that the bridge and kcli are to be developed in parallel and
+asked to remove the prohibition on administering an existing bridge. The
+categorical address veto has been removed from the local kcli source. Do not
+restore that exclusion in the mainnet roadmap or require a fresh deployment
+solely because a contract already exists. A target must still match reviewed
+code/ABI, authorities, members, thresholds, state and exact transaction intent;
+existing V1/V2 compatibility is not established by this decision.
+
+At the decision checkpoint, public-network/loopback restrictions remained and
+recording it did not start a goal. The explicit later request started the
+[mainnet development goal](VORTEX_MAINNET_GOAL_PROMPT.md) implemented above.
+This is development-scope authorization, not approval to change an existing
+deployment, import real keys, sign, broadcast, spend, deploy or operate servers.
+The fresh experiment's asset/custody/deployment constraints are not broadened.
 
 ## Available In kcli
 
@@ -70,8 +138,10 @@ identities, real wallets or live endpoints are included in this handoff.
 
 ## Next Separate Exercise
 
-This build hard-disables public-chain Vortex use. Do not remove that boundary
-or start the mainnet experiment based on this handoff.
+The prior 1.5.0 build hard-disabled public-chain Vortex use. The parallel-development
+decision permits implementing a reviewed mainnet profile, including compatible
+existing deployments, but not simply bypassing verification or activating an
+experiment. No permanent address-based exclusion is part of that scope.
 
 1. Independently review the CLI, KDF/TTY/file threat model, dependencies and final
    reproducible contract/CLI artifacts. Authenticate policy/ABI distribution.

@@ -1,11 +1,13 @@
 # Producer Dashboard RPC Reliability
 
-Implemented locally on 7 October 2026, at the existing unreleased version 1.6.0.
+Initially implemented locally on 7 October 2026 at unreleased version 1.6.0.
 The measurements below describe that combined development checkout, not a
 release of its unrelated features. Dashboard source publication retains the
 current public package version 1.5.0 and excludes older unpublished KFS,
 transfer and restricted-mainnet Vortex changes. No tag or registry release is
-part of this source publication.
+part of that initial source publication. The subsequent
+[1.6.0 release](RELEASE_NOTES.md) includes the complete local software feature
+set; the measurements below retain their original validation scope.
 This change is scoped to `producer-dashboard`. It does not change another
 command's provider, signing, configuration or transaction behavior.
 
@@ -120,8 +122,8 @@ executable through a temporary PATH, not the combined development binary.
 Dashboard option parsing and mainnet read-only chain checks are self-contained;
 they do not depend on unpublished KFS or transaction-network changes.
 
-The staged package, lockfile, README and exported executable retain version
-1.5.0. The installed combined development checkout remains 1.6.0. Older local
+That dashboard-only commit's package, lockfile, README and exported executable
+retained version 1.5.0. The installed combined development checkout was 1.6.0. Older local
 KFS, transfer and restricted-mainnet Vortex changes were preserved but excluded
 from this dashboard commit. No tag or package-registry release was made.
 

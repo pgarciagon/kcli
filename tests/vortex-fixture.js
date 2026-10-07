@@ -36,17 +36,22 @@ function fixture(dir) {
 async function rpcFixture(f, overrides = {}) {
   const state = { config: structuredClone(f.snapshot.config), paused: false, proposal: { eta: '0', nonce: '0', epoch: '0', kind: 0 }, nonce: 'KAA=', mana: '1000000000', sends: 0, tx: null, irreversible: false, ...overrides };
   const contract = new Contract({ id: bridge.address, abi: f.ctx.abi });
+  const blockId = height => height === 100 ? f.snapshot.head.id : '0x1220' + P.sha('synthetic-block-' + height);
   async function answer(method, params) {
+    if (state.beforeCall) await state.beforeCall(method, params, state);
     if (state.failure === method) throw Error('synthetic sensitive response must be withheld');
     if (method === 'chain.get_chain_id') return { chain_id: state.chainId || chainId };
     if (method === 'contract_meta_store.get_contract_meta') return { meta: { abi: state.abiText || f.abiText } };
-    if (method === 'chain.get_head_info') return { head_topology: { id: f.snapshot.head.id, height: '100' }, head_state_merkle_root: 'synthetic-stable-state', head_block_time: state.time || '400000000', last_irreversible_block: state.irreversible ? '100' : '90' };
+    if (method === 'chain.get_head_info') {
+      const height = state.height ?? 100; if (state.advancing) state.height = height + 1;
+      return { head_topology: { id: blockId(height), height: String(height) }, head_state_merkle_root: state.root || 'synthetic-stable-state', head_block_time: state.time || '400000000', last_irreversible_block: state.lib || (state.irreversible ? '100' : '90') };
+    }
     if (method === 'chain.get_account_nonce') return { nonce: state.nonce };
     if (method === 'chain.get_account_rc') return { rc: state.mana };
     if (method === 'chain.invoke_system_call') {
       const q = await P.kernel.deserialize(params.args, 'Query'); let object = { exists: false, value: '', key: '' };
       if (q.space.system && q.space.id === 2) object = { exists: true, value: utils.encodeBase64url(state.code || code), key: '' };
-      if (q.space.system && q.space.id === 3) object = { exists: true, value: utils.encodeBase64url(await P.kernel.serialize({ hash: utils.encodeBase64url(Buffer.from('1220' + P.sha(code), 'hex')), call: true, transaction: true, upload: true }, 'Metadata')), key: '' };
+      if (q.space.system && q.space.id === 3) object = { exists: true, value: utils.encodeBase64url(await P.kernel.serialize({ hash: utils.encodeBase64url(Buffer.from('1220' + P.sha(code), 'hex')), call: true, transaction: true, upload: true, ...(state.authority || {}) }, 'Metadata')), key: '' };
       if (!q.space.system && [100, 201].includes(q.space.id)) {
         if (params.caller_data?.caller !== bridge.address || params.caller_data?.caller_privilege !== 'user_mode') throw Error('wrong storage caller context');
         const list = (q.space.id === 100 ? state.validators || validators.map(s => s.address) : state.admins || admins.map(s => s.address)).map(a => Buffer.from(utils.decodeBase58(a))).sort(Buffer.compare);
@@ -72,8 +77,9 @@ async function rpcFixture(f, overrides = {}) {
     if (method === 'block_store.get_blocks_by_id' || method === 'block_store.get_blocks_by_height') {
       const included = structuredClone(state.included || state.tx);
       if (included?.operations[0].call_contract.args === '') delete included.operations[0].call_contract.args;
-      const blockId = method === 'block_store.get_blocks_by_height' && state.fork ? '0x1220' + '04'.repeat(32) : f.snapshot.head.id;
-      return { block_items: [{ block_id: blockId, block_height: '100', block: { transactions: included ? [included] : [] }, receipt: { transaction_receipts: state.tx && !state.missingReceipt ? [{ id: state.tx.id, reverted: !!state.reverted }] : [] } }] };
+      const height = method === 'block_store.get_blocks_by_height' ? Number(params.ancestor_start_height) : 100;
+      const id = state.fork || state.forkAtHeight === height ? '0x1220' + '04'.repeat(32) : blockId(height);
+      return { block_items: [{ block_id: id, block_height: String(height), block: { id, header: { height: String(height), previous: blockId(height - 1) }, transactions: included && height === 100 ? [included] : [] }, ...(state.missingBlockReceipt ? {} : { receipt: { id, height: String(height), state_delta_entries: state.deltas || [], transaction_receipts: state.tx && !state.missingReceipt && height === 100 ? [{ id: state.tx.id, reverted: !!state.reverted }] : [] } }) }] };
     }
     throw Error('unsupported fixture method');
   }

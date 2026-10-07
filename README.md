@@ -1,16 +1,31 @@
 # kcli - Koinos CLI
 
-Current version: `1.5.0`
+Current version: `1.6.0`
 
 A command line tool for interacting with the Koinos blockchain, built with TypeScript and koilib.
 
 ## Installation
 
+The GitHub release includes a compiled Node.js package, not a standalone native
+binary. Use Node.js 22 and npm; runtime dependencies are installed by npm.
+
 ```bash
-npm install
+npm install -g https://github.com/pgarciagon/kcli/releases/download/v1.6.0/kcli-1.6.0.tgz
+kcli --version
+```
+
+Alternatively, build the tagged source:
+
+```bash
+git clone --branch v1.6.0 --depth 1 https://github.com/pgarciagon/kcli.git
+cd kcli
+npm ci
 npm run build
 npm link
 ```
+
+See [release notes, verification and limitations](RELEASE_NOTES.md). GitHub
+distribution does not imply that a package was published to the npm registry.
 
 ## Development
 
@@ -22,20 +37,23 @@ npm run dev -- <command>
 kcli <command>
 ```
 
-Run the focused wallet/Vortex tests:
+Run the dashboard, KFS, wallet/Vortex, transaction and derivation regression tests:
 
 ```bash
 npm test
 ```
 
-Vortex V2 local administration is available from source, not a tagged release. Named
+Vortex V2 restricted local/mainnet administration is included in 1.6.0. Named
 encrypted wallets and detached-signing commands are described in the
 [CLI administrator guide](VORTEX_ADMINISTRATOR_GUIDE.md); the
 [implementation status](VORTEX_IMPLEMENTATION_STATUS.md) distinguishes tests
 from actual contract execution. These workflows do not use Kondor or a custom
 administration website and do not modify the existing default wallet/config.
 The opt-in fresh-chain exercise is documented separately; `npm test` does not
-start Docker or operate a public chain. Public-chain Vortex use is disabled.
+start Docker or operate a public chain. Mainnet requires an authenticated reviewed
+manifest, an explicitly trusted review-key fingerprint and two independently
+operated reviewed HTTPS RPCs. No mainnet deployment or real custody is qualified
+by these development tests. Public testnet Vortex profiles remain unsupported.
 
 ## Build
 
@@ -88,20 +106,85 @@ kcli token-balance <contractId> <address>
 kcli transfer <to> <amount>
 kcli transfer <to> <amount> --dry-run
 kcli transfer <to> <amount> --password-file ~/.kcli/wallet-password.txt --yes
+kcli transfer <to> <amount> --no-wait --nonce KAE= --password-file ~/.kcli/wallet-password.txt --yes
 kcli --network testnet transfer <to> 10
 ```
 
 Transfers KOIN from the encrypted wallet imported with `kcli import-wallet`. The command shows transaction details before signing and requires typing `TRANSFER` to confirm.
 Use `--password-file <path>` with a local `0600` file for non-interactive automation, and `--yes` only when you intentionally want to skip the confirmation prompt.
+Use `--no-wait` when an external regression runner will verify inclusion separately. Use `--nonce <base64url>` only when the caller controls nonce sequencing, for example when submitting a deliberate mempool-pressure burst.
 
 #### Transfer Any Token (KCS-4)
 ```bash
 kcli token-transfer <contractId> <to> <amount>
 kcli token-transfer <contractId> <to> <amount> --dry-run
 kcli token-transfer <contractId> <to> <amount> --password-file ~/.kcli/wallet-password.txt --yes
+kcli token-transfer <contractId> <to> <amount> --no-wait --nonce KAI= --password-file ~/.kcli/wallet-password.txt --yes
 ```
 
 Transfers any KCS-4 token from the encrypted wallet. The token contract is queried for symbol and decimals before building the transaction.
+
+#### Koinos Fund System Proposals and Votes
+
+```bash
+kcli fund-info
+kcli proposals --status active --all
+kcli proposals --status upcoming --json
+kcli proposals --status past --order date
+kcli proposal <id>
+kcli votes [address]
+kcli vote <id> --percent 50 --dry-run
+kcli vote <id> --percent 50
+kcli vote <id> --percent 0  # Remove an existing vote
+```
+
+These commands target Koinos Fund System (KFS) projects. Block-producer voting on
+protocol upgrades is a separate mechanism. Mainnet defaults to fund contract
+`1A5BmMqV5jN5zBrdkhQumAfDZBzXLPBeN9`. The CLI checks the RPC chain ID against
+the selected network and validates the deployed contract interface before use.
+
+Read commands support `--json`, which preserves raw integer amounts and
+timestamps. `votes` uses the supplied address, the imported wallet's public
+address, or the configured default account, in that order, without unlocking.
+`proposals` defaults to active projects ordered by votes, highest first.
+Use `--limit <1-100>` for a bounded page, `--cursor <returned-cursor>` to continue,
+`--all` for all pages, and `--ascending` to reverse the order. Past projects can
+only be ordered by date.
+
+Vote allocations use KOIN plus VHP balances, in steps of 5%, with a maximum total
+allocation of 100%. Updating a project's percentage replaces its previous
+allocation; repeating it renews expiration; zero removes it. Recorded expired
+allocations still count toward the contract's allocation budget until updated or
+removed. Voting does not transfer your tokens, but requires available mana.
+
+Dry-runs prepare an unsigned transaction without unlocking the wallet or reading
+a password file. They do not simulate contract execution. An explicit public
+address can be used without an imported wallet:
+
+```bash
+kcli --network mainnet --rpc https://api.koinos.io vote <id> \
+  --percent 50 --address <public-address> --dry-run
+```
+
+A signed vote uses the imported encrypted wallet and requires typing `VOTE`.
+For controlled automation, use `--password-file <0600-file>` and `--yes`.
+The default RC limit is 10% of available mana; `--rc-limit <base-units>` sets a
+positive limit no greater than available mana (100,000,000 base units = 1 mana).
+After submission, the CLI waits for inclusion, checks the block receipt, and
+reads the allocation back. Inclusion is not irreversible finality. An error or
+timeout after submission must be investigated before retrying. `--no-wait`
+returns after submission without verifying inclusion or readback, and
+`--wait-timeout <1-300>` adjusts the default 60-second inclusion wait.
+
+No default fund deployment is configured for the official testnet. Use
+`--fund-contract <address>` only for a verified compatible deployment on the
+selected chain; it does not bypass the chain-ID or ABI checks. The integration
+uses [KPS](https://github.com/Armana-group/kps) as an interface reference, with an
+independent CLI implementation and an ABI fetched from chain metadata.
+
+Validation includes synthetic signed voting tests, live mainnet reads, and
+unsigned preparation. A public-chain vote/update/removal round trip remains
+unverified.
 
 #### Official Testnet Info
 ```bash
@@ -134,7 +217,7 @@ kcli generate-wallet
 
 #### Derive Kondor-Compatible Accounts from Seed
 ```bash
-kcli derive-from-seed "<seed phrase>" -n 5
+kcli derive-from-seed "<seed phrase>" --num-accounts 5
 ```
 
 #### Get Address from Private Key

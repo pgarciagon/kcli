@@ -1,7 +1,7 @@
 # Vortex V2 Koinos CLI Administration
 
-Development qualification guide, updated 5 October 2026. These commands are
-source-only development work, not a tagged release or production approval. They require neither
+Software qualification guide for 1.6.0, updated 7 October 2026. The
+[software release](RELEASE_NOTES.md) is not production approval. These commands require neither
 Kondor nor an administration website. Ethereum administration is outside scope.
 
 ## Boundary And Provenance
@@ -30,10 +30,16 @@ Validator transfer signatures and validator pause/veto messages are different
 authorities. This command group deliberately refuses embedded validator
 signatures. It does not enroll validators or prove independent custody.
 
-**This qualification build permits only `local` manifests and literal loopback
-HTTP RPCs. Public mainnet and testnet signing/submission are disabled.** A
-separate reviewed public-network qualification and human-approved deployment
-exercise are required before expanding this boundary.
+**Local schema-1 profiles retain literal loopback HTTP. Mainnet schema-2 profiles
+require authenticated review inputs and two explicit reviewed HTTPS RPCs.**
+Public testnets remain unsupported in this command group. Software capability is
+not approved custody, a compatible deployment or permission for a real action.
+
+On 5 October Pablo clarified that kcli and the bridge should be developed in
+parallel. There is no permanent veto of an existing bridge address: eligibility
+must follow reviewed code/ABI, authority and policy compatibility. Removing the
+address veto does not establish compatibility or approve any production action.
+See the [mainnet development goal](VORTEX_MAINNET_GOAL_PROMPT.md).
 
 ## Named Encrypted Wallets
 
@@ -85,7 +91,7 @@ signing computer. A `reviewed: true` flag is an operator declaration, not proof
 of review, deployment or authority. Wallet configuration and public addresses
 do not establish contract membership or possession of keys.
 
-Manifest schema:
+Local manifest schema (unchanged):
 
 ```json
 {
@@ -123,6 +129,103 @@ The contract's exact deployed code hash, three authorization flags, ABI hash,
 administrator map, validator map and thresholds are checked against the policy.
 When membership changes, review a successor manifest before preparing more
 transactions. Do not edit a signed package to follow a new policy.
+
+## Restricted Mainnet Profile
+
+Keep the same source, contract and policy fields, but use `schema: 2` and the
+following network fields. This example is deliberately non-runnable; the RPC
+operators, endpoints, code/source correspondence and full deployment policy must
+be reviewed independently, not inferred from a name or two different URLs.
+
+```json
+{
+  "name": "mainnet",
+  "chainId": "EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==",
+  "rpcs": [
+    { "url": "https://REVIEWED_PRIMARY/", "operator": "reviewed-primary-operator" },
+    { "url": "https://REVIEWED_WITNESS/", "operator": "reviewed-witness-operator" }
+  ]
+}
+```
+
+The mainnet ID is documented by [Koinos](https://docs.koinos.io/exchanges/offline-signing/).
+RPC hostnames, origins and operator identifiers must differ. The human reviewer
+must establish actual operator independence and accepted node software/history;
+labels alone cannot prove it. Both RPCs must support raw code, authority,
+contract-scoped membership reads, metadata and canonical full block receipts.
+Endpoints use canonical HTTPS URLs, including a root trailing slash. Credentials,
+query strings, fragments, redirects, literal IPs and reserved local hostnames
+are refused. TLS certificate validation remains enabled; disabling it through
+`NODE_TLS_REJECT_UNAUTHORIZED=0` is refused. No implicit endpoint or saved
+network/contract fallback is used.
+
+Distribute a separate public attestation over the **exact manifest file bytes**:
+
+```json
+{
+  "schema": 1,
+  "manifestSha256": "LOWERCASE_SHA256_OF_EXACT_MANIFEST",
+  "publicKey": "CANONICAL_BASE64URL_ED25519_SPKI_DER",
+  "signature": "CANONICAL_BASE64URL_64_BYTE_ED25519_SIGNATURE"
+}
+```
+
+The signed UTF-8 payload is `kcli-vortex-manifest-v2`, one newline, then the
+64-character manifest digest, with no final newline. The public key is the
+44-byte Ed25519 SPKI DER encoding. `--review-key` is its lowercase SHA-256
+fingerprint, obtained through an independently trusted channel, not accepted
+automatically from the attestation. The review signing key is separate from
+Koinos wallet keys and contributes no administration quorum. This CLI verifies
+attestations; it does not create a production reviewer identity or manage its
+private key. A valid signature authenticates an assertion, not the quality of
+the audit or authorization to deploy, sign, spend or submit.
+
+All mainnet commands, including offline inspect/sign/merge/payer-sign, need:
+
+```bash
+BIND=(--manifest mainnet-deployment.json --abi bridge.abi \
+  --review manifest-review.json --review-key "$TRUSTED_REVIEW_KEY_SHA256")
+ONLINE=(--network mainnet --rpc "$REVIEWED_PRIMARY_HTTPS_RPC" \
+  --corroborating-rpc "$REVIEWED_WITNESS_HTTPS_RPC" \
+  --contract "$REVIEWED_BRIDGE" "${BIND[@]}")
+kcli vortex prepare pause "${ONLINE[@]}" --args pause-args.json \
+  --rc-limit 300000000 --dry-run
+```
+
+The two explicit URLs must be the pair in the authenticated manifest. Only the
+primary can submit; the corroborating provider is read-only. Obtain current
+human approval for each exact real operation before using the signing/submission
+examples below. No approved compatible mainnet deployment is supplied here.
+
+### Advancing-Chain Checks
+
+The [chain RPC schema](https://github.com/koinos/koinos-proto/blob/master/koinos/rpc/chain/chain_rpc.proto)
+has head-only state reads, not a block selector. kcli brackets each complete
+code/authority/bridge observation with heads. When heads advance, it verifies
+canonical ancestry and full receipts across at most 16 blocks and rejects any
+delta touching the contract's storage, bytecode/authority metadata, payer nonce
+or system-call dispatch. Nonce and sufficient Mana are observed inside the same
+bracketed window; nonce is rechecked before sending. Both
+nodes must independently return the same protected state; the cross-node
+observation interval is checked too. Forks, regressions, missing receipts,
+overlong intervals or protected writes refuse the operation without repairing
+the signed package. Unrelated writes need not stop a preflight. A trusted local
+clock and public heads within 120 seconds are required.
+
+Canonical block IDs are compared at common head and irreversible heights. Final
+completion additionally requires both nodes to corroborate the exact transaction
+block, transaction body/signatures, receipt outcome, sufficient LIB and the
+action-specific resulting state. Payer nonce is checked on both nodes and
+rechecked on the primary; each must report sufficient Mana.
+
+These are bounded optimistic checks under reviewed RPC trust, **not** anchored
+historical reads, cryptographic state proofs or a full PoB verifier. Complete,
+correct recent receipt deltas are a node trust requirement; malicious/incomplete
+records and hidden transient forks are not independently proven absent. Later
+state changes can make an old transaction's current resulting-state readback
+unverifiable, requiring manual history review. Finality checks are corroboration,
+not custody or public operational readiness. There is no force/skip/rebuild or
+automatic resend option.
 
 ## Prepare And Inspect
 
@@ -226,8 +329,8 @@ irreversible with resulting state verified. Exit `0` from submit/reconcile means
 the last state; `3` means incomplete/uncertain; `1` means refused/reverted.
 An RPC receipt alone is not inclusion. Inclusion alone is not finality. The CLI
 checks the canonical block, exact included transaction, block receipt, LIB and
-action-specific state/proposal consumption. These checks trust one explicitly
-selected RPC; independent corroboration remains a deployment qualification gate.
+action-specific state/proposal consumption. Local profiles trust one explicit
+RPC; mainnet profiles require the independent corroboration described above.
 
 ## Recovery And Scheduling
 
@@ -276,7 +379,8 @@ fresh-initializer 48-hour artifact and cached local-chain dependencies in the
 read-only `vortex-fresh-work-20261003` volume. It creates new chain/exercise
 volumes and a fresh official ABI metadata service (v1.1.0 image digest
 `3733ece76ce2f618afeecc5f2b9b6f5022cc9d0ebf43064bed0c6698e819b70a`).
-It uses an internal-only Docker network and a bounded native loopback relay,
+It uses a fresh explicit `10.254.x.0/24` internal-only Docker network (collisions
+fail closed, and retained networks are not deleted) and a bounded native loopback relay,
 synthetic hidden-input wallets and native
 installed `kcli`, and stops only its new containers. It never resumes an old
 chain or uses a public network. Bootstrap is a test harness, not a generic
@@ -297,5 +401,5 @@ See [implementation status](VORTEX_IMPLEMENTATION_STATUS.md) for the measured
 result, not a presumed success. Production still requires independent review,
 reproducible final artifact/source mapping, authenticated policy distribution,
 real custody/restore/device acceptance, independent RPC/finality evidence,
-public-network qualification and explicit human approval. Unsupported setup,
+actual public-node capability/deployment qualification and explicit human approval. Unsupported setup,
 token administration, code upgrades and validator-message signing remain refused.
