@@ -1,0 +1,216 @@
+{
+ "schema": 1,
+ "date": "2026-10-09",
+ "kind": "official Koinos testnet (public chain, test-only tKOIN), installed kcli multisig commands, synthetic test-only members in separate HOME directories on ONE machine (no independent custody), hidden PTY passwords; rehearsal, not a qualification",
+ "network": {
+  "name": "testnet",
+  "chainId": "EiAIKVvm6-V2qmsmUvPJy09vCCLbtn9lHFpwrJbcTIEWRQ==",
+  "rpc": "official foundation testnet JSON-RPC"
+ },
+ "artifact": {
+  "wasmSha256": "bff8872a5230efc03bb63a6a796765b341b3c366de8e18641f4abe695aab2149",
+  "wasmSize": 56779,
+  "sourceSha256": "8a9c9c77371bd130f4508f0bcc5a5388599f14d59e27c4a98f40ca892c4273a1",
+  "abiSha256": "3b2d0b97d355b70db007f72d58c71294275f03f35baa38fcc68d0b1767e46028",
+  "inputsSha256": "e453029402fda11650651aa0c75851ecb06cea068a85562873ba7b257917502a",
+  "toolchainTreeSha256": "e5289f1f492a33c4f6d22ae5eef49df1f9041c58f9d5990922855aeda587d9c5",
+  "identicalBuilds": 2
+ },
+ "syntheticOnly": true,
+ "publicChainUsed": true,
+ "independentCustody": false,
+ "treasury": "12sEVy7HGqwoSyGvpfE7wLN6aVdoZcofTh",
+ "bootstrap": {
+  "transactionId": "0x1220d760df23849fc0fa168eee6583ef344f56fd67e8cf6118266c1244cdf80eb657",
+  "blockId": "0x1220e954c620f9aa116af80775179eb501f94ff7e7411edbf999091c22c91bb9539e",
+  "height": "9075132"
+ },
+ "uploadMana": {
+  "rcUsedBroadcastFalse": "466536120",
+  "rcLimit": "933072240",
+  "provisionedTkoin": 10
+ },
+ "manifests": {
+  "initialSha256": "28fbf6d8f5635a4133cff78675a9dbaa4b4beba7f62b001f2bb1bb9261de5f31",
+  "afterRotationSha256": "2574f1eb93f00b698676fe1cc2b749ca83474454c4aa27ae33eee94f799e9d0f",
+  "policyAfterRotation": {
+   "owners": [
+    "13Jfbq6ojVQvrwvAiJojG55ytLWD4kRQKZ",
+    "15k9VYo1Ax6oFUyege2KALusQSFDkvEe93",
+    "17UPEbH6qv5DxoF6cmTi6jYM1itqjxPxW6",
+    "1EN2iSNBhma1v7FaufvWxNBc2YVVZ8Ta3i",
+    "1NcZnJTKsPCJPqTrGu6fiXzD7qtcw4rXis"
+   ],
+   "threshold": 3,
+   "version": "1"
+  }
+ },
+ "source": {
+  "baseCommit": "29d182d4843c49b09bb99040a2638e44054f84ad",
+  "treeSha256": "11332967abebf09d992396e74fef0359f075ff36f06607db2094690fda38fb63",
+  "files": 87,
+  "note": "working tree the run executed: tracked and non-ignored untracked files; the generated multisig evidence records (evidence/2026-10-0[89]-multisig-*) and evidence/README.md excluded",
+  "manifest": [
+   ".gitignore 2f3ea003f5375cabade0047cc14f2419564332cf3923ae787c8412fb7f724598",
+   "DASHBOARD_RPC_RELIABILITY.md c794d2eb519e8e67b7a535bc597e538d9ce8049ad3f1076cc8ee2b1e6975acc1",
+   "KPS_VOTING_PLAN.md a53e4fd100ea075fc9474a5e99c63a30a35ff5a43f55d1079ea7e890e8afbc1c",
+   "MULTISIG_IMPLEMENTATION_STATUS.md 9d05db9bde62d97395ced198efbd28c999fa5c4e3b397e3fa42c8b5d8f92792d",
+   "MULTISIG_TREASURY_GUIDE.md 02cd9da4247cf83ef70970a7fc74a299b12e61d44c97bf5c805903382cc64d32",
+   "README.md 9e587f65fc97e18c739a66327d2e0bbb5e32ca15045f92ca60f6d8b480f7445a",
+   "RELEASE_NOTES.md 4c46d7abda9471678c894cdfc88df68b3eeea389e7a78dec20b386d8d1467b1a",
+   "TESTNET_CHANGES.md 65e63dd96b761b857294f8cd05d960c7995661429468f8de2dd7a37463d87d98",
+   "VORTEX_ADMINISTRATOR_GUIDE.md 7315a84a903d46c4cd8d5ead55ae97e393c37fa6b515af50117af8249e4a5a88",
+   "VORTEX_HANDOFF.md 5b17d0ffab588752b96f2f06906e383acc442e459e95739c93cf3e0b45449d21",
+   "VORTEX_IMPLEMENTATION_STATUS.md 1863228b36a98bafbe585b21a4bc1344f94426491b68f1e5636646aaeab1bac3",
+   "VORTEX_MAINNET_GOAL_PROMPT.md a30dc135a6cd3476dfd7e5ef9ff3981da2dc3554e413a3ee04333e2c16f77e73",
+   "contracts/multisig-treasury/README.md 22f98db6e515e311565aaded631bb9b19f201acdc6f9a792fb6d6318db6da83b",
+   "contracts/multisig-treasury/abi/treasury.abi 3b2d0b97d355b70db007f72d58c71294275f03f35baa38fcc68d0b1767e46028",
+   "contracts/multisig-treasury/asconfig.json fa6bb6742c083ef2a36aa661c8e94cc4de3488e3e305937a1429c84f56f53e6b",
+   "contracts/multisig-treasury/assembly/Deployment.ts f87f4714195f58859cc9966776f2e77e7721fa9107293a4dceceff776a812306",
+   "contracts/multisig-treasury/assembly/Treasury.ts 7c577ffaca9fede234d9a8126082e2ce0d086fd9f2cb84675a8c8f7093218a1b",
+   "contracts/multisig-treasury/assembly/index.ts 23f2c70398675a6623888ee468884c12e20fbdda76c7231cf69aa470fffa2e3e",
+   "contracts/multisig-treasury/assembly/proto/treasury.proto 6d0bb34d59b4edbfacba6591f2fffc8704c21fbe49bbe9743b0b430944ccb270",
+   "contracts/multisig-treasury/assembly/proto/treasury.ts 4b856cb28a14f1c50ff07e3caad3ce493df00c349f1015963dea5b476a06b12f",
+   "contracts/multisig-treasury/assembly/tsconfig.json 3875abcd0a679ab8d70af07cb84a85a6d57999513ed8b74b72c3e920605cb612",
+   "contracts/multisig-treasury/scripts/build-inner.sh 3bcadd3ef27b03f1af35a6d1ce11a1580bed12cfabe6ac499414a551d24434c0",
+   "contracts/multisig-treasury/scripts/build.sh 252e99c04e902b6e4b54287c8c4a773067d62c5c121780515f210964e46adee1",
+   "contracts/multisig-treasury/scripts/make-abi.cjs b384460811d45a224b942c35d690a20653cc4b79f6499333158ba5a6500861ac",
+   "contracts/multisig-treasury/scripts/render-inputs.cjs ecc502e97472c8530617ba4267e70f94643f294481742d82663b65cacba4ff55",
+   "contracts/multisig-treasury/scripts/tree-hash.cjs 0b6d35d9fcf6e9c0184a9f78d180dc21911c0d895f0c2a40d221759b58f702d0",
+   "evidence/2026-10-04-vortex-local-e2e-initial.json 091a0a584117d59989cbe523a6b8238510e7b62431c6c2b6d6e2712596173414",
+   "evidence/2026-10-04-vortex-local-e2e.json 1a11852e6b0581e76d166b3f6936f622185d44f44a8fb90443ee4d3494f16869",
+   "evidence/2026-10-05-vortex-local-e2e-mainnet-extension.json b2ca001630ebe45d2cc9a62186bd57b95e3f45a249401ed9cd9dbb2b77e7a568",
+   "evidence/2026-10-05-vortex-public-observation.json 343195c55707c12b539bf765b4b8fc636c30a6cf25b43d072cc6a77c74b4be5e",
+   "evidence/2026-10-07-dashboard-rpc-session-limit.md 8aa0bce36675e94944330ef6db63bf4ebeaa360d47a6e9a64b91d4e1ab166e04",
+   "evidence/2026-10-07-dashboard-rpc-validation.json 39a4ef0a8d7cb4b6beab274d859124f52c53274e98747d3c063315abd55c0086",
+   "package-lock.json 1d380ceb9508ae4df68bcb4f359ffc70fae8a147f0f5d75c3156dad632545349",
+   "package.json 6a99f41b6d27b8a994ca02c3dd90b2fe99f52e87f5fdb25b74a082c5b358c1d4",
+   "src/abis/fogata.json b74f94848d32c8b65d452df1f0cca584924804b7e828d8929bea838df80f0641",
+   "src/abis/kcs4.json b50851be7d7f97057196a001b6ade8d51de10b761568c819233669e432890e12",
+   "src/abis/pob.json f855cde280dac147fbf704fafff8311202ba22fc5a0cfdc6399b0c40f7976b0d",
+   "src/abis/token.json 05e586d47c62d7a07225874ca97e237a11b024c87dabe50be627f449ce24dd8d",
+   "src/dashboard-data.ts a52cbc93060a6aaf3a5cf1d5f52a7104b417bce92f3f0f4d674a4604d9de7189",
+   "src/dashboard-rpc.ts 92f0e84ba7a9e60d51b902c342c0740b9bc739ffad10285193ff11b0a66bf9ec",
+   "src/fund.ts ae93e13482dac831a0f178ec9ff4c6c10412ee023f68347e7cb69a475a9135c5",
+   "src/index.ts 3258d5362d2145c531bc65388048c066ca37b06e6f6db143f671c616646a135e",
+   "src/multisig-cli.ts 109943887a120378377c497ec5fd5a04eb46220a5a2f2a28de5f368b69a7e197",
+   "src/multisig-network.ts 5ceeb88fa97f1fef9116548fd58a45f049ce7c1b2d98e27ba8e8910bfbbdd597",
+   "src/multisig-protocol.ts 522cbb2036cd3233c09beb24896ddb4bbb055f2260a9c58f4385503047786f42",
+   "src/multisig.ts 26ba866ca6c23e754509ab3f01a66906ac4f3cf4e33ebef4703c0c018091393d",
+   "src/named-wallets.ts 267970b83876715ebcfd07d98e13055b5e0cc0b25d8135fbc7f87072dd7ef32e",
+   "src/secret-input.ts 8a270f8f99d19ef174b6d38358ca33a0ff026d7fba00cecc0edbcdb3a1ed6e83",
+   "src/secure-files.ts fe1a0f24cf672ee594d135a537112729345078b55666c5817738f0046200cef8",
+   "src/vortex-cli.ts dccdad28de58fcf6e0d22fd942202e6a18fefbc32d0790d03c8984b0cb661613",
+   "src/vortex-network.ts 7465bb0a09689ebcb501f293e4c371a9878b2b112ef7523f124b618684c1c070",
+   "src/vortex-protocol.ts a4dd2957b3b06c84f15efa9c71ce3f9dc949eb87279bd8ed47fd8f983c50b474",
+   "src/vortex.ts b5f6252511f0c5d8930ce1eff9ee10b9a6414c6bba360e5c1c3ab8f7b83efb59",
+   "tests/dashboard-fixture.js 60b1fa827cf859ce0b8baef6578ac8e35514d2ae020e719e7df26259fbe2f2ef",
+   "tests/dashboard-measure.cjs 6ab7340550260f53c14fbd3f43ddd0d8cefd78a52cdf320a8ee56b2765de764a",
+   "tests/dashboard.test.js 6c6189d8af00490f2acf441eeebbe3cc14c9c8f09c8044675b974677492972af",
+   "tests/derivation.test.js 7b16bb185567d902749680cd0c6a7f282d7fa4562cdaeef3952df56478ea98b3",
+   "tests/fixtures/README.md e02bd76ca7b2ee0f6a0ee699b7543507b88bb9dac3f3e7cc33b470c1de473d38",
+   "tests/fixtures/VORTEX_LICENSE.txt 89eab05a3e12f36843751f0cf5c33261a0ad56fba4fcb85458943594fb4ec0bc",
+   "tests/fixtures/lab-name-service/asconfig.json fa6bb6742c083ef2a36aa661c8e94cc4de3488e3e305937a1429c84f56f53e6b",
+   "tests/fixtures/lab-name-service/assembly/index.ts 665474d584911e13bf6971b537ead545b0d3df29f4d24a3de6c5d5a42b5e2cdb",
+   "tests/fixtures/lab-name-service/assembly/tsconfig.json 3875abcd0a679ab8d70af07cb84a85a6d57999513ed8b74b72c3e920605cb612",
+   "tests/fixtures/no-network.cjs 773a7ab0c265a083549a5803b5aaad97c30ab45504bf1f9a5aac72dae059bc35",
+   "tests/fixtures/vortex-fresh.abi.json 0810d36e1130a34a8ebfc16a2bb73f58cc00a65dd102fd7a2516017b619ee234",
+   "tests/fixtures/vortex-rpc-preload.cjs d919dc1f852412383ba83ae7ed14f13de2658d43389814a52451440375d25966",
+   "tests/fund-fixture.js cb1391740d2353b85e1c045387fa94ba80792829d60c706eda1ce812fed37e8d",
+   "tests/fund.test.js e74d7888394edcb3a5f8c78ccbff7f062f1a825484cc3688005d702159793924",
+   "tests/multisig-cli-exercise.sh a2dfbe8c02b52f6db27680ab2c50ddcd0d0e743b6c5f06c0332a79f13ac86f59",
+   "tests/multisig-contract-exercise.sh 4bde13252317603eec8e06b50a11db9454f16bf3ec1a404670e3f0f6beb20a4f",
+   "tests/multisig-fixture.js ecf91c9d69980494ce45f5308264c78850c24c14962a5f0a2add260d6ac3bbc5",
+   "tests/multisig-local-chain.cjs 140129035314c08f6128fff4867bdbfb657abe1ad3084dc63307e765ae9905c2",
+   "tests/multisig-local-e2e.js dbdabeb1e017ececdff0542f73dff40aa892534e18526bde8823047ad8e23d4c",
+   "tests/multisig-local-setup.sh 9d05f32f0d7bdc407ca0469fd1edfa597eb0dbed5392e14ffa4841719bcbd43c",
+   "tests/multisig-local-teardown.sh 195d4ed153194be68bf0c37433820310b2597737b570d2d493b92576b55fe725",
+   "tests/multisig-relay.cjs ccdc8a0197768a9d9f692c420ed0f76f5a2294e58ba8025b6eefe065b31b3c94",
+   "tests/multisig-testnet-rehearsal.sh 123e507b928d09f649cae96c5df89565c15165c77343ca9348f7abc8d1a41f57",
+   "tests/multisig-testnet-tools.cjs eb8a85badaec5b0b64d7636b695f6108369bfbd81dc5230d552a6b600b9cd36f",
+   "tests/multisig.test.js 67310d8119c501cc4942c8f690d3c5250d0d0f0b6ba3f948b603da3d27f0b05a",
+   "tests/transactions.test.js 39deefc1bc0b9abf31ea5269b87ae976229165ce4d1d3655f43ad0d61ebd6bb1",
+   "tests/vortex-fixture.js 548ecb4189c27b9a93885078003f9d632b9d518b15cfaf076b00343eb164e9a9",
+   "tests/vortex-local-chain.cjs 7f8057e0e4d223ec6fb7e9264a8dfa400b5668529dee5c675916da224680659d",
+   "tests/vortex-local-e2e.js 4cae6a5d51d706f48c608ad6fc2fe5d7ad1cddb2f7be304cd6948052a73d19d8",
+   "tests/vortex-local-setup.sh b56ccef8a48db5a8cb18c6b9aee55735e89f0fefeed48d7109e49a38b1d332be",
+   "tests/vortex-mainnet.test.js dcdc7f79d125352077665c145e668411ccf94dac62a259f0322d2c3108c743fc",
+   "tests/vortex-pty.py 7ce8ad9d7bf245370f56502fbd659b6b83e698cdcc4ae814bf1d71096f722419",
+   "tests/vortex.test.js f7c06bc50009db87b7fb77a1eee0d6380f8f0d800d14eb7443a64b623659011a",
+   "tsconfig.json d49bdb658f222bf369488db5a7ef7f7193b692a31fc4f8d4fc979122df280caf"
+  ]
+ },
+ "stepWordingNote": "step names are the driver's verbatim output; 'independent member signatures' means distinct synthetic member keys in separate HOME directories on one machine, not independent custody",
+ "steps": [
+  {
+   "name": "wallets: bootstrap key and six members imported into separate HOMEs through hidden PTY input"
+  },
+  {
+   "name": "prepare-deploy + inspect-deploy: unused address checked, single upload with all three flags, exact artifact hashes",
+   "bootstrapId": "0x1220d760df23849fc0fa168eee6583ef344f56fd67e8cf6118266c1244cdf80eb657",
+   "wasmSha256": "bff8872a5230efc03bb63a6a796765b341b3c366de8e18641f4abe695aab2149"
+  },
+  {
+   "name": "sign-deploy (member key refused) + submit-deploy dry-run + one exact submission, irreversible",
+   "block": "0x1220e954c620f9aa116af80775179eb501f94ff7e7411edbf999091c22c91bb9539e",
+   "height": "9075132"
+  },
+  {
+   "name": "verify-deployment: code + metadata hash, flags, empty policy space, policy v0, nonce 1, no allowances, read at one block that then became irreversible -> manifest written",
+   "manifestSha256": "28fbf6d8f5635a4133cff78675a9dbaa4b4beba7f62b001f2bb1bb9261de5f31"
+  },
+  {
+   "name": "a second bootstrap submission is refused"
+  },
+  {
+   "name": "info: verified code/flags/policy; balance and Mana read",
+   "balance": "1500000000",
+   "mana": "1034821329",
+   "nonce": "1"
+  },
+  {
+   "name": "payment: prepare, non-owner refused, 3 independent member signatures, partial refused, merge, dry-run, one submit, irreversible + event verified, resend refused, reconcile",
+   "id": "0x1220280f8fcd48beb0772bb85dcf9a3c98faa56c5253afb24de082f792133ed6d7b6",
+   "block": "0x1220ce4288b6bb99edd8abc0eeebb7fe1b843084d2dc85cf18738142dc561e9a3400",
+   "recipientCredit": "0.5"
+  },
+  {
+   "name": "rotation: replacement approved by the old quorum (merge quorum-ready, dry-run), irreversible, new manifest snapshot; old manifest refused for info and prepare",
+   "id": "0x12204ffd04089e3f7f30d90649bffe81907742da3a6e803c6593d07a4da38b9b378e",
+   "manifestSha256": "2574f1eb93f00b698676fe1cc2b749ca83474454c4aa27ae33eee94f799e9d0f"
+  },
+  {
+   "name": "post-rotation payment: removed member refused, new quorum (incl. new member) merges, dry-runs, pays and reconciles; old packages bind the old manifest",
+   "id": "0x12207c4aa1f99355a9ece950a41c303b3c4cb6a07a5209cc913f19818f8ad7e2f62a"
+  }
+ ],
+ "independentBootstrapCheck": {
+  "schema": 1,
+  "client": "independent koilib (testnet RPC)",
+  "bootstrapTransaction": "0x1220d760df23849fc0fa168eee6583ef344f56fd67e8cf6118266c1244cdf80eb657",
+  "block": "0x1220e954c620f9aa116af80775179eb501f94ff7e7411edbf999091c22c91bb9539e",
+  "height": "9075132",
+  "operations": 1,
+  "rawBytecodeSha256": "bff8872a5230efc03bb63a6a796765b341b3c366de8e18641f4abe695aab2149",
+  "metadataSha256": "bff8872a5230efc03bb63a6a796765b341b3c366de8e18641f4abe695aab2149",
+  "flags": {
+   "call": true,
+   "transaction": true,
+   "upload": true,
+   "system": false
+  },
+  "policySpaceEmpty": true,
+  "nonce": 1,
+  "allowances": 0
+ },
+ "independentBypassCheck": {
+  "schema": 1,
+  "client": "independent koilib (testnet RPC)",
+  "cases": {
+   "transfer": "{\"error\":\"account 12sEVy7HGqwoSyGvpfE7wLN6aVdoZcofTh has not authorized transaction\",\"acco",
+   "setPolicy": "{\"error\":\"account 12sEVy7HGqwoSyGvpfE7wLN6aVdoZcofTh has not authorized transaction\",\"acco",
+   "tinyReplacement": "{\"error\":\"account 12sEVy7HGqwoSyGvpfE7wLN6aVdoZcofTh has not authorized transaction\",\"acco"
+  },
+  "nonceAndManaUnchanged": true
+ }
+}
