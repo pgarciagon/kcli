@@ -19,7 +19,7 @@ stop_pid() { # <container> <pid file>: stop exactly that process; forget the PID
     if kill -0 \$p 2>/dev/null; then kill -9 \$p 2>/dev/null; sleep 0.5; fi; if kill -0 \$p 2>/dev/null; then echo 'process survived' >&2; exit 1; fi; rm -f $2; fi"
 }
 cleanup() {
-  stop_pid "$KCLI" "$K/relay.pid"; stop_pid "$C" /exercise/producer.pid
+  stop_pid "$KCLI" "$K/relay.pid" || true; stop_pid "$C" /exercise/producer.pid || true
   docker network disconnect "$NET" "$KCLI" 2>/dev/null || true
   if [ "${KEEP:-0}" != 1 ]; then
     [ "$CREATED_K" = 1 ] && docker exec "$KCLI" rm -r -- "$K" 2>/dev/null || true
@@ -27,6 +27,13 @@ cleanup() {
     "$ROOT/tests/multisig-local-teardown.sh" "$RUN_ID" >/dev/null 2>&1 || true
   fi
 }
+# Refuse an existing namespace BEFORE arming cleanup, so cleanup only ever removes what this invocation set up.
+L="label=kcli.multisig.exercise=$RUN_ID"
+if docker network inspect "$NET" >/dev/null 2>&1 || docker inspect "$C" >/dev/null 2>&1 \
+   || docker volume inspect "$RUN_ID-chain" >/dev/null 2>&1 || docker volume inspect "$RUN_ID-exercise" >/dev/null 2>&1 \
+   || [ -n "$(docker ps -aq --filter "$L")$(docker volume ls -q --filter "$L")$(docker network ls -q --filter "$L")" ]; then
+  echo 'namespace already exists; refuse reuse' >&2; exit 2
+fi
 trap cleanup EXIT
 "$ROOT/tests/multisig-local-setup.sh" "$CONFIG" "$RUN_ID" "$LAB_VOLUME"
 ctl() { docker exec "$C" node /exercise/controller.cjs "$@"; }

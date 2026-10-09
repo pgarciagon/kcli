@@ -124,6 +124,15 @@ through a separate channel; never approve an ID copied from an unverified messag
 non-owner or an already-signed identity is refused before the password prompt. Signed packages are
 sensitive: anyone holding a quorum-signed package can submit it, and deleting a file revokes nothing.
 
+Offline review cannot see the treasury's current nonce. Approve only the nonce named in the approved request
+(normally the current nonce plus one, as `kcli multisig info` shows): a package with a later nonce has no expiry
+and can execute once that nonce is next, as long as its signatures still meet the policy then in force and
+balance and Mana suffice. An approved package that should not execute is durably cancelled only by consuming
+its nonce with another transaction; a rotation that removes its signers makes it invalid only while that policy
+stands. Every signature in a
+package must be valid: a single non-owner, duplicate-identity or malformed signature makes the contract refuse
+the whole transaction, so merge only packages produced by `kcli multisig sign`.
+
 The coordinator merges, dry-runs, submits once and reconciles:
 
 ```bash

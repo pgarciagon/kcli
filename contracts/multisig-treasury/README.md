@@ -1,7 +1,8 @@
 # Koinos multisig treasury contract (template 1.0.0)
 
-Status: development template for the proposed kcli multisig workflow. Not audited, not deployed, not qualified
-for Mainnet funds. Local-chain evidence does not establish independent custody or Mainnet readiness.
+Status: development template for the proposed kcli multisig workflow. Not audited; deployed only on disposable
+local chains and in one synthetic official-testnet rehearsal; not deployed on Mainnet and not qualified for
+Mainnet funds. Local-chain evidence does not establish independent custody or Mainnet readiness.
 
 ## What it enforces
 
