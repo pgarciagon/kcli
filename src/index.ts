@@ -17,6 +17,7 @@ import pobAbi from './abis/pob.json';
 import packageJson from '../package.json';
 import { FundClient, assertFundNetwork, formatFundVotes, parsePercentage, parsePositiveInteger, parseProjectId, PROJECT_STATUSES, terminalText, timestampIso } from './fund';
 import { registerVortexCommands } from './vortex-cli';
+import { registerMultisigCommands } from './multisig-cli';
 import { DashboardProvider, dashboardError, parseDashboardInteger } from './dashboard-rpc';
 import { DashboardProducerData, dashboardAge, dashboardValue, dashboardWholeUnits } from './dashboard-data';
 
@@ -3052,4 +3053,5 @@ program
   });
 
 registerVortexCommands(program);
+registerMultisigCommands(program);
 program.parse();

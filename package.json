@@ -20,6 +20,9 @@
     "VORTEX_HANDOFF.md",
     "VORTEX_IMPLEMENTATION_STATUS.md",
     "VORTEX_MAINNET_GOAL_PROMPT.md",
+    "MULTISIG_TREASURY_GUIDE.md",
+    "MULTISIG_IMPLEMENTATION_STATUS.md",
+    "contracts/multisig-treasury",
     "RELEASE_NOTES.md"
   ],
   "scripts": {
