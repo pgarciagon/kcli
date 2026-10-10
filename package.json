@@ -1,6 +1,6 @@
 {
   "name": "kcli",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "A Koinos blockchain command line tool",
   "main": "dist/index.js",
   "bin": {
@@ -22,6 +22,8 @@
     "VORTEX_MAINNET_GOAL_PROMPT.md",
     "MULTISIG_TREASURY_GUIDE.md",
     "MULTISIG_IMPLEMENTATION_STATUS.md",
+    "MULTISIG_FINALITY_FIX.md",
+    "MULTISIG_RELEASE_VALIDATION.md",
     "contracts/multisig-treasury",
     "RELEASE_NOTES.md"
   ],

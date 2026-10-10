@@ -1,7 +1,7 @@
 # Multisig Treasury Operating Guide
 
-Status: candidate for a future kcli release (proposed 1.7.0). The `kcli multisig` commands below are
-implemented on this development branch and were exercised end to end on disposable local Koinos chains and
+Software version: kcli 1.7.0. The `kcli multisig` commands below are
+implemented and were exercised end to end on disposable local Koinos chains and
 once on the official testnet with synthetic test-only members (see
 [implementation status](MULTISIG_IMPLEMENTATION_STATUS.md)). No foundation treasury, real member custody or
 Mainnet readiness is established by this guide. Do not fund a wallet on the

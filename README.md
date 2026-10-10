@@ -1,6 +1,6 @@
 # kcli - Koinos CLI
 
-Current version: `1.6.0`
+Current version: `1.7.0`
 
 A command line tool for interacting with the Koinos blockchain, built with TypeScript and koilib.
 
@@ -10,14 +10,14 @@ The GitHub release includes a compiled Node.js package, not a standalone native
 binary. Use Node.js 22 and npm; runtime dependencies are installed by npm.
 
 ```bash
-npm install -g https://github.com/pgarciagon/kcli/releases/download/v1.6.0/kcli-1.6.0.tgz
+npm install -g https://github.com/pgarciagon/kcli/releases/download/v1.7.0/kcli-1.7.0.tgz
 kcli --version
 ```
 
 Alternatively, build the tagged source:
 
 ```bash
-git clone --branch v1.6.0 --depth 1 https://github.com/pgarciagon/kcli.git
+git clone --branch v1.7.0 --depth 1 https://github.com/pgarciagon/kcli.git
 cd kcli
 npm ci
 npm run build
@@ -37,7 +37,7 @@ npm run dev -- <command>
 kcli <command>
 ```
 
-Run the dashboard, KFS, wallet/Vortex, transaction and derivation regression tests:
+Run the dashboard, KFS, wallet/Vortex, multisig, transaction and derivation regression tests:
 
 ```bash
 npm test
@@ -55,16 +55,21 @@ manifest, an explicitly trusted review-key fingerprint and two independently
 operated reviewed HTTPS RPCs. No mainnet deployment or real custody is qualified
 by these development tests. Public testnet Vortex profiles remain unsupported.
 
-## Multisig Treasury (development, unreleased)
+## Multisig Treasury
 
-A contract-enforced N-of-M KOIN treasury (`kcli multisig ...`) is implemented on this development branch for
-the proposed 1.7.0 release: an immutable treasury contract template in
+A contract-enforced N-of-M KOIN treasury (`kcli multisig ...`) is included in kcli 1.7.0: an immutable
+treasury contract template (independently versioned 1.0.0) in
 [contracts/multisig-treasury](contracts/multisig-treasury/README.md), offline inspect/sign/merge with named
 wallets, fresh-preflight one-shot submission and irreversible reconciliation. It was exercised on
 disposable local chains and rehearsed once on the official testnet with synthetic test-only keys on one machine.
 Read the [operating guide](MULTISIG_TREASURY_GUIDE.md) and the
-[implementation status](MULTISIG_IMPLEMENTATION_STATUS.md) before any use; no external review, real custody or
+[implementation status](MULTISIG_IMPLEMENTATION_STATUS.md) before any use; no external security audit, real custody or
 Mainnet qualification exists yet.
+
+Both reviewed Mainnet RPCs must cover the transaction block with their irreversible heights before
+terminal success or reversion. Normal reversible inclusion keeps waiting; deadlines never cause an
+automatic resend. See [finality statuses and exit codes](MULTISIG_FINALITY_FIX.md) and
+[release validation and limitations](MULTISIG_RELEASE_VALIDATION.md).
 
 ## Build
 

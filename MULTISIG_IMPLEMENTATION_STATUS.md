@@ -2,7 +2,8 @@
 
 Updated 10 October 2026. Implements the plan of issue #1 (foundation treasury multisig) through Phase 3 on
 **disposable local chains**, plus one rehearsal on the official testnet with synthetic test-only members on one
-machine. Not released, not audited, not deployed on Mainnet, no real custody. The package version stays 1.6.0 until the release gates below pass.
+machine. Software version: kcli 1.7.0, contract template 1.0.0. Not externally audited,
+not deployed on Mainnet, no real custody. Software publication is not treasury activation.
 
 ## Prior art
 
@@ -31,7 +32,7 @@ here is new.
 
 ## Evidence
 
-- `npm test`: `node --test` reports 121 passing (104 before this change; the existing tests are unchanged),
+- Initial PR evidence: `node --test` reported 121 passing (104 before the multisig addition),
   offline, isolated HOMEs, synthetic keys.
 - [Contract exercise](evidence/2026-10-08-multisig-contract-local.json) on a fresh local chain with
   official images, KOIN from `koinos-contracts-as@4fc33bb` and Mainnet-like Mana routing, using an independent
@@ -99,16 +100,19 @@ status/exit-code contract and fresh synthetic validation. This does not upgrade 
 evidence above into Mainnet qualification or an independent security audit. Fresh review follow-ups also
 bind enclosing block/receipt anchors, preserve waiting during bounded witness head lag, and sync first-use
 journal ancestor entries before sending. The full suite passes 145 tests on Node 22 and Node 23.
-See [release validation](MULTISIG_RELEASE_VALIDATION.md) for current publication gates. No version bump
-or release has occurred yet; the authorized target is kcli 1.7.0, with contract template 1.0.0 unchanged.
+See [release validation](MULTISIG_RELEASE_VALIDATION.md) for the 1.7.0 validation procedure and evidence.
+Contract template 1.0.0 is unchanged. The human approved PR head bc6c1b1 and GitHub merged it as
+35679b75dab724d7c227bab12355d9eb87777445 before the isolated release preparation.
 
 ## Not done (open gates)
 
 1. Phase 0 decisions by the foundation: roster, threshold, custody domains, owners of the review, release
    and operations roles.
-2. Independent reproduction of the artifact (also on amd64) and independent review of contract and client.
+2. Foundation-selected independent operators must reproduce the personalized artifact and review contract
+   and client. Release validation has matching arm64/emulated-amd64 builds and an independent agent review
+   in one host trust domain; these are not independent custody or an external security audit.
 3. Testnet rehearsal by the foundation's actual members on their own devices (the 9 October run used synthetic
    test-only keys on one machine).
 4. External security review; residual-risk record.
-5. Release procedure (version sync, `npm pack` review, tarball install tests, checksums) after explicit
-   release authorization. Mainnet activation is a separate go/no-go.
+5. Mainnet activation is a separately authorized go/no-go after the operational gates above. The
+   software release procedure and its evidence are recorded in MULTISIG_RELEASE_VALIDATION.md.

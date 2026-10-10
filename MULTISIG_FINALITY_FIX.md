@@ -1,9 +1,10 @@
 # PR #2 Finality Correction
 
-Date: 10 October 2026. Base: `00813ff8ba6806836acdd9f231a9cd3de0736f20`, still the open
+Date: 10 October 2026. Base: `00813ff8ba6806836acdd9f231a9cd3de0736f20`, then the open
 [PR #2](https://github.com/pgarciagon/kcli/pull/2) head when work started. The base branch is
-`29d182d4843c49b09bb99040a2638e44054f84ad`. Work is uncommitted on
-`codex/multisig-finality-fix` in a separate checkout. Package version remains 1.6.0.
+`29d182d4843c49b09bb99040a2638e44054f84ad`. The initial correction was prepared on
+`codex/multisig-finality-fix` in a separate checkout. That correction candidate kept package version 1.6.0;
+the separately prepared software release is kcli 1.7.0, with contract template 1.0.0 unchanged.
 
 ## Correction
 
@@ -123,6 +124,7 @@ local chains and separate arm64/amd64 builds, not public-chain transactions or r
 shared Vortex helper, transport design, unrelated commands and version metadata remain unchanged in
 this correction. The primary checkout and its installed kcli are outside this work.
 
-Scoped commit/push and GitHub release 1.7.0 are now authorized by a separate persistent goal. Merge
-still requires explicit approval of the final tested/reviewed SHA, and release follows that approval
-and its remaining validation gates. No npm registry publication or production activation is authorized.
+The human approved final tested/reviewed SHA bc6c1b1aff90080b6416dee9701ecd5e80df1553. GitHub merged
+PR #2 as 35679b75dab724d7c227bab12355d9eb87777445. Release 1.7.0 follows in an isolated checkout,
+with its own exact-commit tests, package validation and checksummed asset verification. No npm registry
+publication or production activation is authorized.

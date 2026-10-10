@@ -1,3 +1,94 @@
+# kcli 1.7.0
+
+This GitHub software release adds the contract-enforced Koinos multisig treasury
+workflow from PR #2. The human approved exact head
+bc6c1b1aff90080b6416dee9701ecd5e80df1553; it was merged as
+35679b75dab724d7c227bab12355d9eb87777445. Contract template version remains
+1.0.0. Software publication does not authorize a real treasury deployment,
+funding, member custody or Mainnet activation.
+
+## Included Changes
+
+- Immutable, personalized N-of-M KOIN treasury contract: one canonical payment
+  or atomic current-quorum owner/threshold replacement; no unilateral key,
+  arbitrary calls, allowances, burns, upgrade or recovery mechanism.
+- `kcli multisig`: verified bootstrap, read-only information/preparation,
+  offline exact-ID inspect/sign/merge with explicit named members, fresh
+  preflight, durable one-shot submission and read-only reconciliation.
+- Finality correction: canonical reversible inclusion remains pending; both
+  reviewed RPC irreversible heights must cover the transaction block for final
+  success/reversion. Exact body, signatures, receipt/event and final canonical
+  rechecks remain mandatory. Bounded deadlines never trigger automatic resend.
+- Review follow-ups: enclosing block/receipt anchors, bounded witness-head lag
+  and durable first-use journal ancestor entries before any submission.
+- English foundation operating guide, status/exit-code documentation and
+  sanitized local validation evidence. Both new validation guides are packaged.
+
+## Installation And Integrity
+
+Use Node.js 22 and npm. This is a compiled JavaScript package with runtime ABIs,
+not a native executable, bundled runtime or npm-registry publication.
+
+```bash
+npm install -g https://github.com/pgarciagon/kcli/releases/download/v1.7.0/kcli-1.7.0.tgz
+kcli --version
+kcli multisig --help
+kcli multisig submit --help
+```
+
+Download kcli-1.7.0.tgz and SHA256SUMS from the same release, then verify before
+installation:
+
+```bash
+shasum -a 256 -c SHA256SUMS
+npm install -g ./kcli-1.7.0.tgz
+```
+
+Source-build users should clone tag v1.7.0 and run npm ci for exact lockfile
+resolution. A tarball consumer resolves declared dependencies from npm; these
+are neither bundled nor locked by the asset. Tests invoking kcli must use the
+candidate executable on an isolated PATH, not an existing global installation.
+
+## Validation And Limits
+
+The correction passes 145 tests on Node 22.12.0 and Node 23.11.0. A clean
+pre-merge tarball install also passes all 145 tests on both runtimes, including
+payment/policy/bootstrap pending-finality progression, exits 0/1/3, unchanged
+signed bytes, one-shot sends and persistent journal/nonce protection. Release
+publication additionally requires repeating complete exact-release-commit and
+installed-tarball tests, content/provenance checks and public download integrity.
+
+A fresh read-only agent review resolved three P2 client findings and one P3
+test-observer issue, with no open finding in scope. The full contract matrix
+(12 grouped checks, all 32 signer subsets) and installed-CLI exercise (9 groups)
+passed on two fresh disposable local chains. Independent encoding verifies
+bootstrap and single-key bypass refusals. Identical synthetic public inputs
+produce byte-identical Wasm/ABI in arm64 and emulated amd64 pinned builders,
+with two clean builds each. See [release validation](MULTISIG_RELEASE_VALIDATION.md)
+and [finality statuses/exit codes](MULTISIG_FINALITY_FIX.md).
+
+Both builders and local members share one host trust domain; synthetic Mainnet
+RPC tests are not independently operated Mainnet witnesses. Historical testnet
+evidence is not a new public-chain run. Agent review is not an external security
+audit, fsync instrumentation is not a physical power-loss test, and these
+results do not qualify Mainnet custody or a foundation treasury. Foundation
+policy, independent operators/devices, external security review and explicit
+Mainnet activation remain separate gates. Quorum loss is permanent; unsupported
+assets are stuck. Read the [operating guide](MULTISIG_TREASURY_GUIDE.md) first.
+
+Fresh dependency audits retain zero critical/high/moderate findings and ten
+source / eleven consumer low-severity affected packages propagated from the
+existing elliptic advisory. No dependency change is included. Use fresh
+authorization for real-chain actions. No real keys, public transactions,
+production services, host global install or npm publication were used by the
+release preparation. The operator's primary checkout/install was preserved;
+its private unrelated burn/fund fixes are not in this release.
+
+## Historical Release
+
+The following 1.6.0 notes and measurements are retained as historical evidence;
+their commands install that old release, not 1.7.0.
+
 # kcli 1.6.0
 
 This GitHub software release includes the complete local application feature

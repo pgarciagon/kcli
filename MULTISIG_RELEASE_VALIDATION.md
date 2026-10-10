@@ -61,10 +61,30 @@ control before repeating the matrix. None of these attempts used a public chain.
 
 ## Publication Gate
 
-Publication requires verified scoped push, approval to merge the exact reviewed
-SHA, then version synchronization, release-candidate suite/pack inspection,
-isolated tarball installation, checksums and independently verified GitHub asset
-downloads. No release has been published yet.
+The scoped push and human approval of bc6c1b1aff90080b6416dee9701ecd5e80df1553
+preceded merge commit 35679b75dab724d7c227bab12355d9eb87777445. Its tree equals
+the tested PR tree. Release 1.7.0 changes metadata/current documentation and the
+CLI's displayed change list only; it preserves reviewed contract/client behavior
+and contract template 1.0.0. Historical versions/evidence are retained.
+
+Publication requires complete tests of the exact release commit on Node 22/23,
+a clean committed export with npm ci and npm pack, file/ABI/provenance inspection,
+isolated non-global tarball installation and tests, checksums, an exact release
+tag, and independently verified public GitHub asset downloads. Both this guide
+and MULTISIG_FINALITY_FIX.md are included in the package allowlist. See
+[release notes](RELEASE_NOTES.md) for distribution and qualification limits.
+
+Pre-merge package validation on 10 October 2026 checked all 155 files and passed
+145/145 installed tests on both Node 22.12.0 and Node 23.11.0, including pending,
+final/reverted status, exits 0/1/3, signed-body and one-shot journal protection.
+Locked source koilib is 9.2.0; a fresh tarball consumer resolves 9.4.0. That
+temporary 1.6.0 candidate was not published and is not the old v1.6.0 asset.
+Release 1.7.0 must repeat those gates against its own exact committed export.
+
+Fresh dependency audits report zero critical/high/moderate and ten source /
+eleven consumer low-severity affected packages from the existing elliptic
+advisory. No dependency upgrade is part of the finality/release change; this
+is not an audit-free claim or an external security audit.
 
 ## Qualification Limits
 

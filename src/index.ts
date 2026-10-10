@@ -25,6 +25,9 @@ const program = new Command();
 const CLI_VERSION = packageJson.version;
 
 const LATEST_CHANGES = [
+  'Added contract-enforced multisig KOIN treasuries with offline approvals, policy rotation and verified bootstrap.',
+  'Multisig waits through reversible inclusion until both reviewed RPCs establish irreversible finality.',
+  'Multisig inclusion anchors and first-use journal durability are verified before terminal results or submission.',
   'producer-dashboard now bounds RPC sockets, staggers cached reads and preserves independent last-good balances.',
   'Added restricted Vortex mainnet profiles with authenticated review and two explicitly reviewed HTTPS RPCs.',
   'Vortex preflight supports advancing heads with protected-state receipt checks and independent finality corroboration.',
