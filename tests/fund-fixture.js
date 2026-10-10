@@ -68,11 +68,14 @@ async function createRpc(options = {}) {
         const index = calls.filter(call => call.method === method).length - 1;
         result = { chain_id: options.chainIds?.[index] || options.chainId || CHAIN_ID };
       }
-      else if (method === 'contract_meta_store.get_contract_meta') result = options.noAbi ? {} : { meta: { abi: JSON.stringify(abi) } };
+      else if (method === 'contract_meta_store.get_contract_meta') result = options.noAbi ? {} : { meta: { abi: options.metadataAbi ?? JSON.stringify(abi) } };
       else if (method === 'chain.get_account_rc') result = { rc: options.mana ?? '10000000000' };
       else if (method === 'chain.get_account_nonce') result = { nonce: 'KAA=' };
       else if (method === 'chain.read_contract') {
-        if (params.contract_id !== FUND) {
+        if (options.missingReadResult) result = undefined;
+        else if (Object.hasOwn(options, 'readResponse')) result = options.readResponse;
+        else if (options.emptyReadResult) result = { result: '' };
+        else if (params.contract_id !== FUND) {
           const balance = params.contract_id === '19GYjDBVXU7keLbYvMLazsGQn3GTWHjHkK' ? (options.koin ?? '10000000000') : (options.vhp ?? '10000000000');
           result = { result: utils.encodeBase64url(await tokenSerializer.serialize({ value: balance }, tokenAbi.methods.balance_of.return)) };
         } else {
@@ -94,6 +97,10 @@ async function createRpc(options = {}) {
             data = { projects: items, start_next_page: options.repeatCursor ? args.start : `page-${offset + items.length}` };
           } else throw new Error('Write method called as a read');
           result = { result: utils.encodeBase64url(await serializer.serialize(data, info.return)) };
+        }
+        if (result && typeof result === 'object' && !Array.isArray(result)) {
+          if (options.omitEmptyReadResult && result.result === '') delete result.result;
+          if (options.readLogs !== undefined) result.logs = options.readLogs;
         }
       } else if (method === 'chain.submit_transaction') {
         const tx = params.transaction;

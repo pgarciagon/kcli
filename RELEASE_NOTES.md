@@ -1,3 +1,65 @@
+# kcli 1.7.1
+
+This patch release publishes the previously local KFS compatibility corrections
+on top of 1.7.0. The multisig treasury template remains 1.0.0. Local burn fixes
+are intentionally excluded; multisig/Vortex behavior and dependencies are unchanged.
+
+## Included Changes
+
+- Mainnet KFS read commands can use a pinned four-method, read-only bundled
+  interface when the RPC ABI index has no entry for the exact default contract.
+- RPC metadata remains preferred. Other networks/contracts, incompatible
+  metadata and RPC failures fail closed. JSON includes `abi_source`; the
+  fallback notice goes to stderr. No automatic RPC switching occurs.
+- `vote` and `vote --dry-run` still require compatible indexed RPC metadata.
+  The bundled read client cannot prepare a vote or expose a write method.
+- Fund result decoding preserves valid protobuf-empty votes while rejecting
+  missing outer results, malformed payloads/logs and invalid base64. Existing
+  allocations and all chain, wallet, balance/Mana and signing checks remain.
+- Sixteen additional fund regression tests and an English
+  [RPC compatibility guide](FUND_RPC_COMPATIBILITY.md), included in the package.
+
+## Installation And Integrity
+
+Use Node.js 22 and npm. Download `kcli-1.7.1.tgz` and `SHA256SUMS` from the same
+[GitHub release](https://github.com/pgarciagon/kcli/releases/tag/v1.7.1).
+
+```bash
+shasum -a 256 -c SHA256SUMS
+npm install -g ./kcli-1.7.1.tgz
+kcli --version
+kcli proposals --help
+kcli vote --help
+```
+
+The asset is a compiled JavaScript/ABI package, not a native executable or
+bundled runtime. npm resolves runtime dependencies; use tagged source and
+`npm ci` for exact lockfile resolution. No npm registry publication is included.
+
+## Validation And Limits
+
+Release gates include the complete 161-test suite (41 fund tests) on Node
+22.12.0 and 23.11.0, a fresh tarball installation and public asset/checksum
+verification. Tests use isolated homes, synthetic keys and loopback/simulated
+RPCs. Baseline tests reproduced the absent-ABI failure and invalid-response
+acceptance; valid protobuf-empty vote preparation already worked in 1.7.0.
+No real wallet/password, signed public-chain vote or production service action
+is authorized by software publication. Fund inclusion is not irreversible
+finality; a real vote/update/removal round trip and external audit remain open.
+The existing 1.7.0 multisig qualification limits still apply.
+
+The locked source passes 161/161 on both runtimes with the candidate executable
+explicitly checked before each run. A live read-only relay to api.koinos.io
+also passes settings, proposal and allocation reads plus unsigned preparation:
+21 reads, no attempted writes and no submissions. The absent-index fallback
+is validated synthetically, not asserted for that public endpoint. See the
+[compatibility guide](FUND_RPC_COMPATIBILITY.md) for provenance and limitations.
+
+## Historical Releases
+
+The following 1.7.0 and 1.6.0 notes are historical; their installation commands
+install those old releases, not 1.7.1.
+
 # kcli 1.7.0
 
 This GitHub software release adds the contract-enforced Koinos multisig treasury

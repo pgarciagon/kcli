@@ -1,6 +1,6 @@
 {
   "name": "kcli",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "A Koinos blockchain command line tool",
   "main": "dist/index.js",
   "bin": {
@@ -16,6 +16,7 @@
     "TESTNET_CHANGES.md",
     "DASHBOARD_RPC_RELIABILITY.md",
     "KPS_VOTING_PLAN.md",
+    "FUND_RPC_COMPATIBILITY.md",
     "VORTEX_ADMINISTRATOR_GUIDE.md",
     "VORTEX_HANDOFF.md",
     "VORTEX_IMPLEMENTATION_STATUS.md",

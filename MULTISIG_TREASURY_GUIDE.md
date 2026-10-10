@@ -1,6 +1,6 @@
 # Multisig Treasury Operating Guide
 
-Software version: kcli 1.7.0. The `kcli multisig` commands below are
+Software version: kcli 1.7.1. The `kcli multisig` commands below are
 implemented and were exercised end to end on disposable local Koinos chains and
 once on the official testnet with synthetic test-only members (see
 [implementation status](MULTISIG_IMPLEMENTATION_STATUS.md)). No foundation treasury, real member custody or

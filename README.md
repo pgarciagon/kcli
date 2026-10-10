@@ -1,6 +1,6 @@
 # kcli - Koinos CLI
 
-Current version: `1.7.0`
+Current version: `1.7.1`
 
 A command line tool for interacting with the Koinos blockchain, built with TypeScript and koilib.
 
@@ -10,14 +10,14 @@ The GitHub release includes a compiled Node.js package, not a standalone native
 binary. Use Node.js 22 and npm; runtime dependencies are installed by npm.
 
 ```bash
-npm install -g https://github.com/pgarciagon/kcli/releases/download/v1.7.0/kcli-1.7.0.tgz
+npm install -g https://github.com/pgarciagon/kcli/releases/download/v1.7.1/kcli-1.7.1.tgz
 kcli --version
 ```
 
 Alternatively, build the tagged source:
 
 ```bash
-git clone --branch v1.7.0 --depth 1 https://github.com/pgarciagon/kcli.git
+git clone --branch v1.7.1 --depth 1 https://github.com/pgarciagon/kcli.git
 cd kcli
 npm ci
 npm run build
@@ -157,7 +157,8 @@ kcli vote <id> --percent 0  # Remove an existing vote
 These commands target Koinos Fund System (KFS) projects. Block-producer voting on
 protocol upgrades is a separate mechanism. Mainnet defaults to fund contract
 `1A5BmMqV5jN5zBrdkhQumAfDZBzXLPBeN9`. The CLI checks the RPC chain ID against
-the selected network and validates the deployed contract interface before use.
+the selected network and validates RPC ABI metadata before use, except for the
+explicitly read-only fallback described below.
 
 Read commands support `--json`, which preserves raw integer amounts and
 timestamps. `votes` uses the supplied address, the imported wallet's public
@@ -166,6 +167,44 @@ address, or the configured default account, in that order, without unlocking.
 Use `--limit <1-100>` for a bounded page, `--cursor <returned-cursor>` to continue,
 `--all` for all pages, and `--ascending` to reverse the order. Past projects can
 only be ordered by date.
+
+Since 1.7.1, if the RPC
+returns no ABI for the known Mainnet KFS address, read commands can use the
+bundled `src/abis/fund-read.json` interface. This contains only four read methods,
+with entry points and protobuf fields checked against upstream
+[fund.proto](https://github.com/koinos/koinos-contracts-as/blob/4fc33bbe0520a77a89619da1e9e6efe98e7c423c/contracts/fund/assembly/proto/fund.proto)
+and its [dispatcher](https://github.com/koinos/koinos-contracts-as/blob/4fc33bbe0520a77a89619da1e9e6efe98e7c423c/contracts/fund/assembly/index.ts).
+This is interface compatibility, not deployed-bytecode verification.
+
+The fallback requires the actual Mainnet chain ID and exact default KFS address;
+it does not apply to testnet or other deployments. Compatible RPC metadata stays
+preferred; incompatible/malformed metadata and RPC failures remain errors.
+An empty ABI index does not prove that the contract is missing. Read output
+adds `abi_source` (`rpc-metadata` or `bundled-read-only`); fallback notices go to
+stderr so `--json` stdout remains parseable. Empty protobuf lists are valid,
+including omitted default bytes in a successful JSON-RPC result object. A
+missing JSON-RPC result envelope is an error, not evidence of no proposals or votes.
+No additional/public RPC is contacted automatically, and no index rebuild,
+service restart or configuration change is needed for these reads.
+
+Both `vote` and its `--dry-run` still require compatible RPC ABI metadata and
+cannot use the bundled interface. For voting, explicitly select a correctly
+indexed RPC on the same network; switching a read RPC is not permission to sign.
+
+Since 1.7.1, fund reads use strict response validation while accepting protobuf defaults:
+`get_user_votes` can return an empty protobuf message when there are no votes.
+The RPC's successful result payload may be `{}` or contain only valid `logs`,
+because [Proto3 JSON omits default fields](https://protobuf.dev/programming-guides/json/#presence-and-default-values).
+The [chain RPC schema](https://github.com/koinos/koinos-proto/blob/master/koinos/rpc/chain/chain_rpc.proto)
+defines the nested `result` as an implicit-presence bytes field. kcli now decodes
+that omission as empty bytes instead of failing with `Fund get_user_votes read
+returned no result.` This applies to fund reads and vote preparation, without
+relaxing chain-ID, ABI, allocation or signing checks. Standard and URL-safe
+base64, with or without padding, are validated before decoding. Missing outer
+RPC results, null/non-object payloads, malformed logs/bytes and RPC failures
+remain errors and cannot silently turn an unknown allocation into an empty list.
+
+See [fund RPC compatibility, examples and validation limits](FUND_RPC_COMPATIBILITY.md).
 
 Vote allocations use KOIN plus VHP balances, in steps of 5%, with a maximum total
 allocation of 100%. Updating a project's percentage replaces its previous
@@ -196,7 +235,8 @@ No default fund deployment is configured for the official testnet. Use
 `--fund-contract <address>` only for a verified compatible deployment on the
 selected chain; it does not bypass the chain-ID or ABI checks. The integration
 uses [KPS](https://github.com/Armana-group/kps) as an interface reference, with an
-independent CLI implementation and an ABI fetched from chain metadata.
+independent CLI implementation, an ABI fetched from RPC metadata, and the
+restricted read-only fallback above.
 
 Validation includes synthetic signed voting tests, live mainnet reads, and
 unsigned preparation. A public-chain vote/update/removal round trip remains

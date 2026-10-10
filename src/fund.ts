@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { Abi, Contract, ProviderInterface, Transaction, utils } from 'koilib';
 import tokenAbi from './abis/token.json';
+import fundReadAbi from './abis/fund-read.json';
 
 export interface FundContext {
   networkName: string;
@@ -39,6 +40,8 @@ export interface FundGlobals {
 }
 
 export const PROJECT_STATUSES: Record<string, number> = { upcoming: 0, active: 1, past: 2 };
+const MAINNET_CHAIN_ID = 'EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==';
+const MAINNET_FUND = '1A5BmMqV5jN5zBrdkhQumAfDZBzXLPBeN9';
 
 const METHODS: Record<string, { argument: string; result: string; readOnly: boolean }> = {
   get_global_vars: { argument: '', result: 'fund.global_vars', readOnly: true },
@@ -107,9 +110,10 @@ interface SchemaField {
   options?: Record<string, unknown>;
 }
 
-// Validate the interface from chain metadata before allowing it to encode operations.
-export function validateFundAbi(abi: Abi): Abi {
-  for (const [name, expected] of Object.entries(METHODS)) {
+// Read fallback schemas must never expose or authorize a write operation.
+export function validateFundAbi(abi: Abi, readOnly = false): Abi {
+  const methods = Object.fromEntries(Object.entries(METHODS).filter(([, method]) => !readOnly || method.readOnly));
+  for (const [name, expected] of Object.entries(methods)) {
     const method = abi?.methods?.[name];
     if (!method || method.entry_point !== methodEntryPoint(name)
       || (method.argument || '') !== expected.argument || (method.return || '') !== expected.result
@@ -144,6 +148,7 @@ export function validateFundAbi(abi: Abi): Abi {
     },
   };
   for (const [type, expected] of Object.entries(fields)) {
+    if (readOnly && type === 'update_vote_arguments') continue;
     const actual = schema?.[type]?.fields;
     for (const [name, [id, fieldType, rule]] of Object.entries(expected)) {
       const field = actual?.[name];
@@ -165,7 +170,7 @@ export function validateFundAbi(abi: Abi): Abi {
       if (schema?.[type]?.values?.[name] !== value) throw new Error(`Incompatible fund ABI enum: ${type}.${name}.`);
     }
   }
-  return { ...validated, methods: Object.fromEntries(Object.entries(METHODS).map(([name, method]) => [name, {
+  return { ...validated, methods: Object.fromEntries(Object.entries(methods).map(([name, method]) => [name, {
     entry_point: methodEntryPoint(name), argument: method.argument, return: method.result, read_only: method.readOnly,
   }])) };
 }
@@ -194,21 +199,50 @@ export function validateVoteChange(votes: FundVote[], project: FundProject, perc
 }
 
 export class FundClient {
-  private constructor(public readonly contract: Contract, public readonly context: FundContext, private readonly provider: ProviderInterface) {}
+  private constructor(public readonly contract: Contract, public readonly context: FundContext, private readonly provider: ProviderInterface,
+    public readonly abiSource: 'rpc-metadata' | 'bundled-read-only' = 'rpc-metadata', private readonly readOnly = false) {}
 
-  static async connect(context: FundContext, provider: ProviderInterface, override?: string): Promise<FundClient> {
+  static async connect(context: FundContext, provider: ProviderInterface, override?: string, readOnly = false): Promise<FundClient> {
     const id = override || context.contracts.fund;
     if (!id) throw new Error(`No verified fund contract configured for ${context.networkName}. Use --fund-contract with a verified deployment.`);
     if (!utils.isChecksumAddress(id)) throw new Error('Invalid fund contract address.');
     await assertFundNetwork(context, provider);
     const contract = new Contract({ id, provider });
     const abi = await contract.fetchAbi({ updateFunctions: false, updateSerializer: false });
-    if (!abi) throw new Error('The fund contract has no ABI in chain metadata.');
-    return new FundClient(new Contract({ id, provider, abi: validateFundAbi(abi) }), context, provider);
+    if (abi === undefined) {
+      if (readOnly && context.networkName === 'mainnet' && context.definition.chainId === MAINNET_CHAIN_ID && id === MAINNET_FUND) {
+        return new FundClient(new Contract({ id, provider, abi: validateFundAbi(fundReadAbi as Abi, true) }), context, provider, 'bundled-read-only', true);
+      }
+      throw new Error('The RPC ABI index has no ABI for this fund contract. Voting and custom deployments require compatible RPC metadata; use a fully indexed RPC on the selected network.');
+    }
+    return new FundClient(new Contract({ id, provider, abi: validateFundAbi(abi) }), context, provider, 'rpc-metadata', readOnly);
+  }
+
+  private async read<T>(name: string, args: Record<string, unknown>): Promise<T> {
+    const operation = await this.contract.encodeOperation({ name, args });
+    const response = await this.provider.readContract(operation.call_contract!);
+    if (!response || typeof response !== 'object' || Array.isArray(response)) {
+      throw new Error(`Fund ${name} read returned no result.`);
+    }
+    if (Object.keys(response).some(key => !['result', 'logs'].includes(key))
+      || (Object.prototype.hasOwnProperty.call(response, 'logs')
+        && (!Array.isArray(response.logs) || response.logs.some(log => typeof log !== 'string')))) {
+      throw new Error(`Fund ${name} read returned an invalid response.`);
+    }
+    // Proto3 JSON omits empty bytes; the provider still requires a successful RPC envelope.
+    const result = Object.prototype.hasOwnProperty.call(response, 'result') ? response.result : '';
+    if (typeof result !== 'string') throw new Error(`Fund ${name} read returned invalid result bytes.`);
+    const base64 = result.replace(/-/g, '+').replace(/_/g, '/');
+    const bytes = Buffer.from(base64, 'base64');
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(base64) || (base64.includes('=') && base64.length % 4 !== 0)
+      || bytes.toString('base64').replace(/=+$/, '') !== base64.replace(/=+$/, '')) {
+      throw new Error(`Fund ${name} read returned invalid result bytes.`);
+    }
+    return this.contract.serializer!.deserialize<T>(bytes, this.contract.abi!.methods[name].return!);
   }
 
   async globals(): Promise<FundGlobals> {
-    const { result } = await this.contract.functions.get_global_vars<Partial<FundGlobals>>({});
+    const result = await this.read<Partial<FundGlobals>>('get_global_vars', {});
     return {
       fee_denominator: result?.fee_denominator || '0', total_projects: result?.total_projects || 0,
       total_upcoming_projects: result?.total_upcoming_projects || 0, total_active_projects: result?.total_active_projects || 0,
@@ -217,7 +251,7 @@ export class FundClient {
   }
 
   async project(id: number): Promise<FundProject> {
-    const { result } = await this.contract.functions.get_project<FundProject>({ project_id: id });
+    const result = await this.read<FundProject>('get_project', { project_id: id });
     if (result?.id !== id) throw new Error('Project was not found or returned an inconsistent ID.');
     return this.normalizeProject(result);
   }
@@ -228,7 +262,7 @@ export class FundClient {
 
   async votes(address: string): Promise<FundVote[]> {
     if (!utils.isChecksumAddress(address)) throw new Error('Invalid voter address.');
-    const { result } = await this.contract.functions.get_user_votes<{ votes?: FundVote[] }>({ voter: address });
+    const result = await this.read<{ votes?: FundVote[] }>('get_user_votes', { voter: address });
     return result?.votes || [];
   }
 
@@ -243,7 +277,7 @@ export class FundClient {
     const projects: FundProject[] = [];
     for (let page = 0; page < 1000; page++) {
       seen.add(cursor);
-      const { result } = await this.contract.functions.get_projects<{ projects?: FundProject[]; start_next_page?: string }>({
+      const result = await this.read<{ projects?: FundProject[]; start_next_page?: string }>('get_projects', {
         status: PROJECT_STATUSES[options.status], order_by: options.order === 'votes' ? 1 : 0,
         start: cursor, limit: options.limit, descending: options.descending,
       });
@@ -272,6 +306,7 @@ export class FundClient {
   }
 
   async prepareVote(id: number, percent: number, voter: string, requestedRcLimit?: string) {
+    if (this.readOnly) throw new Error('This fund connection is read-only. Voting requires compatible RPC ABI metadata.');
     const project = await this.project(id);
     const votes = await this.votes(voter);
     const balances = await this.balances(voter);

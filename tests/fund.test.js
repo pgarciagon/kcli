@@ -5,7 +5,7 @@ const { tmpdir } = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
-const { Provider } = require('koilib');
+const { Provider, Serializer } = require('koilib');
 const { FundClient, parseProjectId, parsePercentage, validateVoteChange, validateFundAbi, formatFundVotes, timestampIso } = require('../dist/fund.js');
 const { CHAIN_ID, TESTNET_ID, FUND, SIGNER, VOTER, makeAbi, project, createRpc } = require('./fund-fixture');
 
@@ -205,7 +205,7 @@ test('invalid inputs and allocation excess fail with nonzero exit before passwor
 
 test('RPC failures and incompatible ABI fail without submission', async t => {
   const { rpc, home } = await setup(t, { noAbi: true });
-  const result = await run(home, rpc, ['proposal', '1']);
+  const result = await run(home, rpc, ['vote', '1', '--percent', '50', '--dry-run', '--address', VOTER]);
   assert.equal(result.code, 1);
   assert.match(result.stderr, /no ABI/);
   const abi = makeAbi(); abi.methods.update_vote.entry_point = 1;
@@ -217,6 +217,214 @@ test('RPC failures and incompatible ABI fail without submission', async t => {
   const failure = await run(failed.home, failed.rpc, ['proposal', '1']);
   assert.equal(failure.code, 1);
   assert.equal(failed.rpc.state.submitted.length, 0);
+});
+
+test('bundled fund read interface matches independent wire schemas and exposes no writes', async () => {
+  const abi = require('../src/abis/fund-read.json');
+  const validated = validateFundAbi(abi, true);
+  const expected = makeAbi();
+  delete expected.methods.update_vote;
+  delete expected.koilib_types.nested.fund.nested.update_vote_arguments;
+  delete expected.koilib_types.nested.fund.nested.update_vote_result;
+  assert.deepEqual(validated, expected);
+  assert.ok(Object.values(validated.methods).every(method => method.read_only));
+  assert.throws(() => validateFundAbi(abi), /update_vote/);
+});
+
+test('missing ABI supports every read command with provenance and clean JSON, but never touches wallets', async t => {
+  const { rpc, home } = await setup(t, { noAbi: true, votes: [vote(1, 10, '2000000000000')] });
+  const folder = path.join(home, '.kcli');
+  await mkdir(folder);
+  const wallet = JSON.stringify({ address: VOTER, encryptedKey: { deliberatelyInvalid: true } });
+  const config = JSON.stringify({ network: 'mainnet', mainProducerAddress: VOTER });
+  await writeFile(path.join(folder, 'wallet.json'), wallet);
+  await writeFile(path.join(folder, 'config.json'), config);
+  for (const args of [['fund-info'], ['proposals', '--all', '--limit', '2'], ['proposal', '1'], ['votes', VOTER], ['votes']]) {
+    const result = await run(home, rpc, [...args, '--json']);
+    assert.equal(result.code, 0, result.stderr);
+    const parsed = JSON.parse(result.stdout);
+    assert.equal(parsed.abi_source, 'bundled-read-only');
+    assert.match(result.stderr, /RPC ABI index is empty/);
+    assert.ok(!result.stdout.includes('Unlocking'));
+    if (args[0] === 'proposals') assert.deepEqual(parsed.projects.map(project => project.id), [1, 2, 3]);
+  }
+  const { readFile } = require('node:fs/promises');
+  assert.equal(await readFile(path.join(folder, 'wallet.json'), 'utf8'), wallet);
+  assert.equal(await readFile(path.join(folder, 'config.json'), 'utf8'), config);
+  assert.ok(!rpc.calls.some(call => ['chain.get_account_nonce', 'chain.submit_transaction'].includes(call.method)));
+});
+
+test('bundled read connection cannot prepare a vote or expose update_vote', async t => {
+  const { rpc } = await setup(t, { noAbi: true });
+  const fund = await FundClient.connect(context(rpc.url), new Provider(rpc.url), undefined, true);
+  assert.equal(fund.contract.functions.update_vote, undefined);
+  assert.equal(fund.abiSource, 'bundled-read-only');
+  const before = rpc.calls.length;
+  await assert.rejects(fund.prepareVote(1, 50, VOTER), /read-only/);
+  assert.equal(rpc.calls.length, before);
+  assert.equal(rpc.state.submitted.length, 0);
+});
+
+test('missing ABI never falls back for signed votes or vote dry-runs', async t => {
+  const { rpc, home } = await setup(t, { noAbi: true });
+  await saveSyntheticWallet(home);
+  for (const args of [['--dry-run', '--address', VOTER], ['--yes', '--password-file', '/deliberately/missing/password']]) {
+    const result = await run(home, rpc, ['vote', '1', '--percent', '50', ...args]);
+    assert.equal(result.code, 1); assert.match(result.stderr, /Voting and custom deployments require/);
+    assert.ok(!result.stdout.includes('Unlocking')); assert.ok(!result.stderr.includes('bundled read-only'));
+  }
+  assert.ok(!rpc.calls.some(call => call.method === 'chain.read_contract'));
+  assert.equal(rpc.state.submitted.length, 0);
+});
+
+test('bundled fallback is pinned to the actual mainnet chain and known fund address', async t => {
+  for (const options of [{ chainId: TESTNET_ID }, { chainId: 'unknown-chain' }]) {
+    const { rpc, home } = await setup(t, { ...options, noAbi: true });
+    const result = await run(home, rpc, ['proposals']);
+    assert.equal(result.code, 1); assert.match(result.stderr, /chain ID does not match/);
+    assert.equal(rpc.calls.length, 1);
+  }
+  const { rpc, home } = await setup(t, { noAbi: true, chainId: TESTNET_ID });
+  const testnet = await run(home, rpc, ['--network', 'testnet', 'proposals', '--fund-contract', FUND]);
+  assert.equal(testnet.code, 1); assert.match(testnet.stderr, /no ABI/);
+  const main = await setup(t, { noAbi: true });
+  const other = await run(main.home, main.rpc, ['proposals', '--fund-contract', VOTER]);
+  assert.equal(other.code, 1); assert.match(other.stderr, /no ABI/);
+  assert.ok(!main.rpc.calls.some(call => call.method === 'chain.read_contract'));
+});
+
+test('metadata-backed reads remain preferred and incompatible or malformed metadata is not replaced', async t => {
+  const ordinary = await setup(t);
+  const result = await run(ordinary.home, ordinary.rpc, ['proposals', '--json']);
+  assert.equal(result.code, 0); assert.equal(JSON.parse(result.stdout).abi_source, 'rpc-metadata');
+  assert.equal(result.stderr, '');
+  for (const mutate of [abi => { abi.methods.get_projects.entry_point = 1; },
+    abi => { abi.methods.get_projects.read_only = false; }, abi => { delete abi.koilib_types; }]) {
+    const abi = makeAbi(); mutate(abi);
+    const { rpc, home } = await setup(t, { abi });
+    const failure = await run(home, rpc, ['proposals']);
+    assert.equal(failure.code, 1); assert.match(failure.stderr, /Incompatible fund/);
+    assert.ok(!rpc.calls.some(call => call.method === 'chain.read_contract'));
+  }
+  for (const metadataAbi of ['null', 'false', '0', '{invalid JSON']) {
+    const { rpc, home } = await setup(t, { metadataAbi });
+    const failure = await run(home, rpc, ['proposals']);
+    assert.equal(failure.code, 1); assert.ok(!failure.stderr.includes('bundled read-only'));
+    assert.ok(!rpc.calls.some(call => call.method === 'chain.read_contract'));
+  }
+});
+
+test('RPC errors and missing JSON-RPC result envelopes remain errors, never an empty proposal list', async t => {
+  for (const options of [{ failMethod: 'contract_meta_store.get_contract_meta' }, { noAbi: true, failMethod: 'chain.read_contract' },
+    { noAbi: true, missingReadResult: true }]) {
+    const { rpc, home } = await setup(t, options);
+    const result = await run(home, rpc, ['proposals', '--json']);
+    assert.equal(result.code, 1); assert.ok(!result.stdout.includes('projects'));
+    assert.equal(rpc.state.submitted.length, 0);
+  }
+});
+
+test('explicit empty protobuf results are valid empty proposal and vote lists', async t => {
+  const { rpc, home } = await setup(t, { noAbi: true, emptyReadResult: true });
+  const proposals = await run(home, rpc, ['proposals', '--json']);
+  assert.equal(proposals.code, 0, proposals.stderr); assert.deepEqual(JSON.parse(proposals.stdout).projects, []);
+  const votes = await run(home, rpc, ['votes', VOTER, '--json']);
+  assert.equal(votes.code, 0, votes.stderr); assert.deepEqual(JSON.parse(votes.stdout).votes, []);
+});
+
+test('protobuf-omitted empty result bytes decode as empty votes with or without logs', async t => {
+  for (const readLogs of [undefined, [], ['Synthetic successful read']]) {
+    const { rpc, home } = await setup(t, { omitEmptyReadResult: true, readLogs });
+    const fund = await FundClient.connect(context(rpc.url), new Provider(rpc.url));
+    assert.deepEqual(await fund.votes(VOTER), []);
+    const result = await run(home, rpc, ['votes', VOTER, '--json']);
+    assert.equal(result.code, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout).votes, []);
+    assert.equal(rpc.state.submitted.length, 0);
+  }
+});
+
+test('read-only ABI fallback also accepts protobuf-omitted empty list bytes', async t => {
+  const { rpc, home } = await setup(t, { noAbi: true, omitEmptyReadResult: true, projects: [] });
+  for (const args of [['votes', VOTER], ['proposals']]) {
+    const result = await run(home, rpc, [...args, '--json']);
+    assert.equal(result.code, 0, result.stderr);
+    const data = JSON.parse(result.stdout);
+    assert.equal(data.abi_source, 'bundled-read-only');
+    assert.deepEqual(args[0] === 'votes' ? data.votes : data.projects, []);
+  }
+  assert.equal(rpc.state.submitted.length, 0);
+});
+
+test('CLI vote --percent 100 10 dry-run succeeds when empty vote bytes are omitted', async t => {
+  const { rpc, home } = await setup(t, { omitEmptyReadResult: true, projects: [project(10)] });
+  const result = await run(home, rpc, ['vote', '--percent', '100', '10', '--address', VOTER,
+    '--dry-run', '--password-file', '/deliberately/missing/password']);
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Allocation: 0% -> 100%/);
+  assert.match(result.stdout, /wallet not unlocked; transaction not signed or submitted/);
+  const transaction = JSON.parse(result.stdout.slice(result.stdout.indexOf('{'), result.stdout.lastIndexOf('}') + 1));
+  assert.equal(transaction.signatures?.length || 0, 0);
+  assert.equal(rpc.state.submitted.length, 0);
+});
+
+test('nonempty vote allocations remain authoritative with protobuf-default omission', async t => {
+  const { rpc, home } = await setup(t, { omitEmptyReadResult: true, projects: [project(10)], votes: [vote(2, 20)] });
+  const result = await run(home, rpc, ['vote', '--percent', '100', '10', '--address', VOTER, '--dry-run']);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /exceeding 100%/);
+  assert.equal(rpc.state.submitted.length, 0);
+});
+
+test('valid standard and URL-safe base64 vote bytes accept padded and unpadded encodings', async t => {
+  const votes = [vote(10, 20, '18446744073709551615')];
+  const serializer = new Serializer(makeAbi().koilib_types);
+  const base64 = Buffer.from(await serializer.serialize({ votes }, 'fund.get_user_votes_result')).toString('base64');
+  for (const result of [base64, base64.replace(/=+$/, ''), base64.replace(/\+/g, '-').replace(/\//g, '_'),
+    base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')]) {
+    const { rpc } = await setup(t, { readResponse: { result } });
+    const fund = await FundClient.connect(context(rpc.url), new Provider(rpc.url));
+    assert.deepEqual(await fund.votes(VOTER), votes);
+    assert.equal(rpc.state.submitted.length, 0);
+  }
+});
+
+test('malformed contract read responses never become empty votes', async t => {
+  for (const readResponse of [null, false, 1, '', [], { result: null }, { result: 0 }, { result: false },
+    { logs: null }, { logs: 'bad logs' }, { logs: [1] }, { error: 'failed read' },
+    { result: '', error: 'failed read' }, { unknown: 'not a read response' },
+    { result: 'not*base64' }, { result: 'A' }, { result: 'AQ=' }, { result: 'AB==' }]) {
+    const { rpc } = await setup(t, { readResponse });
+    const fund = await FundClient.connect(context(rpc.url), new Provider(rpc.url));
+    await assert.rejects(fund.votes(VOTER));
+    assert.equal(rpc.state.submitted.length, 0);
+  }
+});
+
+test('missing envelope or malformed vote response blocks before wallet unlock and submission', async t => {
+  for (const options of [{ missingReadResult: true }, { readResponse: { logs: [1] } }]) {
+    const { rpc, home } = await setup(t, options);
+    await mkdir(path.join(home, '.kcli'), { recursive: true });
+    const wallet = JSON.stringify({ address: VOTER, encryptedKey: { intentionally: 'invalid' } });
+    await writeFile(path.join(home, '.kcli/wallet.json'), wallet);
+    const result = await run(home, rpc, ['vote', '--percent', '100', '10', '--yes',
+      '--password-file', '/deliberately/missing/password']);
+    assert.equal(result.code, 1);
+    assert.doesNotMatch(result.stderr, /password|decrypt|unlock/i);
+    assert.equal(rpc.state.submitted.length, 0);
+  }
+});
+
+test('synthetic signed vote and removal handle omitted empty vote bytes', async t => {
+  const { rpc, home } = await setup(t, { omitEmptyReadResult: true, projects: [project(10)] });
+  const passwordFile = await saveSyntheticWallet(home);
+  for (const percent of ['100', '0']) {
+    const result = await run(home, rpc, ['vote', '--percent', percent, '10', '--password-file', passwordFile, '--yes']);
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /Allocation readback verified/);
+  }
+  assert.equal(rpc.state.submitted.length, 2);
+  assert.deepEqual(rpc.state.votes, []);
 });
 
 test('a wallet address that does not match the decrypted key cannot sign', async t => {

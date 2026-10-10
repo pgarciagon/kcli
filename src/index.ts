@@ -25,6 +25,8 @@ const program = new Command();
 const CLI_VERSION = packageJson.version;
 
 const LATEST_CHANGES = [
+  'Fund reads support an empty RPC ABI index through a pinned read-only Mainnet interface; voting still requires RPC metadata.',
+  'Fund reads validate RPC envelopes and base64 while accepting protobuf-default empty votes without weakening allocation checks.',
   'Added contract-enforced multisig KOIN treasuries with offline approvals, policy rotation and verified bootstrap.',
   'Multisig waits through reversible inclusion until both reviewed RPCs establish irreversible finality.',
   'Multisig inclusion anchors and first-use journal durability are verified before terminal results or submission.',
@@ -1083,10 +1085,11 @@ function fundError(error: unknown): void {
   process.exitCode = 1;
 }
 
-async function connectFund(options: FundOptions) {
+async function connectFund(options: FundOptions, readOnly = true) {
   const context = resolveNetworkContext();
   const provider = getProvider(context);
-  const fund = await FundClient.connect(context, provider, options.fundContract);
+  const fund = await FundClient.connect(context, provider, options.fundContract, readOnly);
+  if (fund.abiSource === 'bundled-read-only') console.error('Note: RPC ABI index is empty for KFS; using the bundled read-only Mainnet interface. Voting still requires compatible RPC ABI metadata.');
   return { context, provider, fund };
 }
 
@@ -1107,7 +1110,7 @@ fundCommand('fund-info', 'Read Koinos Fund System settings')
       const { context, fund } = await connectFund(options);
       const globals = await fund.globals();
       const balances = await fund.balances(fund.contract.getId());
-      fundOutput(options, { network: context.networkName, rpc: context.rpc, contract: fund.contract.getId(), ...globals, balances }, () => {
+      fundOutput(options, { network: context.networkName, rpc: context.rpc, contract: fund.contract.getId(), abi_source: fund.abiSource, ...globals, balances }, () => {
         console.log(`Koinos Fund System (${context.networkName})`);
         console.log(`Contract: ${fund.contract.getId()}`);
         console.log(`Projects: ${globals.total_projects} total, ${globals.total_active_projects} active, ${globals.total_upcoming_projects} upcoming`);
@@ -1131,7 +1134,7 @@ fundCommand('proposals', 'List Koinos Fund System projects')
       const limit = parsePositiveInteger(options.limit, 'Page limit', 100);
       const { context, fund } = await connectFund(options);
       const page = await fund.projects({ ...options, limit, order: options.order || (options.status === 'past' ? 'date' : 'votes'), descending: !options.ascending });
-      fundOutput(options, { network: context.networkName, contract: fund.contract.getId(), ...page }, () => {
+      fundOutput(options, { network: context.networkName, contract: fund.contract.getId(), abi_source: fund.abiSource, ...page }, () => {
         console.log(`KFS ${options.status} projects (${context.networkName})`);
         for (const project of page.projects) {
           console.log(`${project.id}  ${terminalText(project.title)}  | ${formatFundVotes(project.total_votes)} votes | ${utils.formatUnits(project.monthly_payment, 8)} KOIN/month`);
@@ -1149,7 +1152,7 @@ fundCommand('proposal <id>', 'Read a Koinos Fund System project')
       const id = parseProjectId(idArg);
       const { context, fund } = await connectFund(options);
       const project = await fund.project(id);
-      fundOutput(options, { network: context.networkName, contract: fund.contract.getId(), project }, () => {
+      fundOutput(options, { network: context.networkName, contract: fund.contract.getId(), abi_source: fund.abiSource, project }, () => {
         console.log(`Project ${id}: ${terminalText(project.title)}`);
         console.log(`Status: ${Object.keys(PROJECT_STATUSES).find(key => PROJECT_STATUSES[key] === project.status) || 'unknown'}`);
         console.log(`Creator: ${project.creator}`);
@@ -1171,7 +1174,7 @@ fundCommand('votes [address]', 'Read an account\'s Koinos Fund System allocation
       const { context, fund } = await connectFund(options);
       const votes = await fund.votes(address);
       const allocated = votes.reduce((sum, vote) => sum + vote.weight * 5, 0);
-      fundOutput(options, { network: context.networkName, contract: fund.contract.getId(), voter: address, allocated_percent: allocated, votes }, () => {
+      fundOutput(options, { network: context.networkName, contract: fund.contract.getId(), abi_source: fund.abiSource, voter: address, allocated_percent: allocated, votes }, () => {
         console.log(`KFS votes for ${address} (${context.networkName})`);
         for (const vote of votes) {
           console.log(`Project ${vote.project_id}: ${vote.weight * 5}% | expires ${timestampIso(vote.expiration)}${BigInt(vote.expiration) <= BigInt(Date.now()) ? ' (expired)' : ''}`);
@@ -1200,7 +1203,7 @@ fundCommand('vote <id>', 'Update, renew, or remove a Koinos Fund System vote')
       if (options.address && !options.dryRun) throw new Error('--address is only available with --dry-run. Signed votes use the imported wallet.');
       const address = options.address || loadWalletFile()?.address || (options.dryRun ? loadConfig().defaultAccount : undefined);
       if (!address || !isValidAddress(address)) throw new Error('Import a wallet or supply --address for a dry-run.');
-      const { context, provider, fund } = await connectFund(options);
+      const { context, provider, fund } = await connectFund(options, false);
       const prepared = await fund.prepareVote(id, percent, address, options.rcLimit);
       const { transaction, allocation } = prepared;
       const txId = transaction.transaction.id!;

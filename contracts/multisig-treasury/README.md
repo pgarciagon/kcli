@@ -1,6 +1,6 @@
 # Koinos multisig treasury contract (template 1.0.0)
 
-Status: template 1.0.0 distributed with kcli 1.7.0. Not externally audited; deployed only on disposable
+Status: template 1.0.0 distributed with kcli 1.7.1. Not externally audited; deployed only on disposable
 local chains and in one synthetic official-testnet rehearsal; not deployed on Mainnet and not qualified for
 Mainnet funds. Local-chain evidence does not establish independent custody or Mainnet readiness.
 

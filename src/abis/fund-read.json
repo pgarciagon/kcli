@@ -1,0 +1,68 @@
+{
+  "methods": {
+    "get_global_vars": { "entry_point": 776169940, "argument": "", "return": "fund.global_vars", "read_only": true },
+    "get_project": { "entry_point": 3495374342, "argument": "fund.get_project_arguments", "return": "fund.project", "read_only": true },
+    "get_projects": { "entry_point": 1544343095, "argument": "fund.get_projects_arguments", "return": "fund.get_projects_result", "read_only": true },
+    "get_user_votes": { "entry_point": 1727410647, "argument": "fund.get_user_votes_arguments", "return": "fund.get_user_votes_result", "read_only": true }
+  },
+  "koilib_types": {
+    "nested": {
+      "fund": {
+        "nested": {
+          "global_vars": {
+            "fields": {
+              "fee_denominator": { "id": 1, "type": "uint64", "options": { "jstype": "JS_STRING" } },
+              "total_projects": { "id": 2, "type": "uint32" },
+              "total_upcoming_projects": { "id": 3, "type": "uint32" },
+              "total_active_projects": { "id": 4, "type": "uint32" },
+              "payment_times": { "id": 5, "type": "uint64", "rule": "repeated", "options": { "jstype": "JS_STRING" } },
+              "remaining_balance": { "id": 6, "type": "uint64", "options": { "jstype": "JS_STRING" } }
+            }
+          },
+          "get_project_arguments": { "fields": { "project_id": { "id": 1, "type": "uint32" } } },
+          "get_user_votes_arguments": { "fields": { "voter": { "id": 1, "type": "bytes", "options": { "(koinos.btype)": "ADDRESS" } } } },
+          "get_projects_arguments": {
+            "fields": {
+              "status": { "id": 1, "type": "project_status" },
+              "order_by": { "id": 2, "type": "order_projects_by" },
+              "start": { "id": 3, "type": "string" },
+              "limit": { "id": 4, "type": "int32" },
+              "descending": { "id": 5, "type": "bool" }
+            }
+          },
+          "get_projects_result": {
+            "fields": {
+              "projects": { "id": 1, "type": "project", "rule": "repeated" },
+              "start_next_page": { "id": 2, "type": "string" }
+            }
+          },
+          "get_user_votes_result": { "fields": { "votes": { "id": 1, "type": "vote_info", "rule": "repeated" } } },
+          "vote_info": {
+            "fields": {
+              "project_id": { "id": 1, "type": "uint32" },
+              "weight": { "id": 2, "type": "uint32" },
+              "expiration": { "id": 3, "type": "uint64", "options": { "jstype": "JS_STRING" } }
+            }
+          },
+          "project": {
+            "fields": {
+              "id": { "id": 1, "type": "uint32" },
+              "creator": { "id": 2, "type": "bytes", "options": { "(koinos.btype)": "ADDRESS" } },
+              "beneficiary": { "id": 3, "type": "bytes", "options": { "(koinos.btype)": "ADDRESS" } },
+              "title": { "id": 4, "type": "string" },
+              "description": { "id": 5, "type": "string" },
+              "monthly_payment": { "id": 6, "type": "uint64", "options": { "jstype": "JS_STRING" } },
+              "start_date": { "id": 7, "type": "uint64", "options": { "jstype": "JS_STRING" } },
+              "end_date": { "id": 8, "type": "uint64", "options": { "jstype": "JS_STRING" } },
+              "status": { "id": 9, "type": "project_status" },
+              "total_votes": { "id": 10, "type": "uint64", "options": { "jstype": "JS_STRING" } },
+              "votes": { "id": 11, "type": "uint64", "rule": "repeated", "options": { "jstype": "JS_STRING" } }
+            }
+          },
+          "project_status": { "values": { "upcoming": 0, "active": 1, "past": 2 } },
+          "order_projects_by": { "values": { "by_date": 0, "by_votes": 1 } }
+        }
+      }
+    }
+  }
+}
