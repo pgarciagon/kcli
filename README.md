@@ -55,6 +55,17 @@ manifest, an explicitly trusted review-key fingerprint and two independently
 operated reviewed HTTPS RPCs. No mainnet deployment or real custody is qualified
 by these development tests. Public testnet Vortex profiles remain unsupported.
 
+## Multisig Treasury (development, unreleased)
+
+A contract-enforced N-of-M KOIN treasury (`kcli multisig ...`) is implemented on this development branch for
+the proposed 1.7.0 release: an immutable treasury contract template in
+[contracts/multisig-treasury](contracts/multisig-treasury/README.md), offline inspect/sign/merge with named
+wallets, fresh-preflight one-shot submission and irreversible reconciliation. It was exercised on
+disposable local chains and rehearsed once on the official testnet with synthetic test-only keys on one machine.
+Read the [operating guide](MULTISIG_TREASURY_GUIDE.md) and the
+[implementation status](MULTISIG_IMPLEMENTATION_STATUS.md) before any use; no external review, real custody or
+Mainnet qualification exists yet.
+
 ## Build
 
 ```bash

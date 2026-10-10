@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package treasury;
+
+import "koinos/options.proto";
+
+// @description Atomically replace the complete owner set and threshold; requires the current owner quorum
+// @read-only false
+// @result empty_object
+message set_policy_arguments {
+  repeated bytes owners = 1 [(koinos.btype) = ADDRESS];
+  uint32 threshold = 2;
+}
+
+// @description Current owner policy
+// @read-only true
+// @result policy_object
+message get_policy_arguments {
+}
+
+// @description Contract template identity and immutable deployment bindings
+// @read-only true
+// @result template_info
+message get_template_arguments {
+}
+
+message empty_object {
+}
+
+message policy_object {
+  repeated bytes owners = 1 [(koinos.btype) = ADDRESS];
+  uint32 threshold = 2;
+  uint64 version = 3 [jstype = JS_STRING];
+}
+
+message template_info {
+  string name = 1;
+  string version = 2;
+  bytes chain_id = 3;
+  bytes koin_contract = 4 [(koinos.btype) = CONTRACT_ID];
+  uint32 min_owners = 5;
+  uint32 max_owners = 6;
+}
