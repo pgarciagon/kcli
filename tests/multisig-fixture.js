@@ -24,15 +24,15 @@ function manifestFor(policy = { owners: owners.map(s => s.address), threshold: 3
       bootstrap: { transactionId: '0x1220' + h('bootstrap'), blockId: '0x1220' + h('block-50'), height: '50' } },
     policy };
 }
-function fixture(dir, manifest = manifestFor()) {
+function fixture(dir, manifest = manifestFor(), review, reviewKey) {
   const manifestFile = path.join(dir, 'treasury.json'); fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2), { mode: 0o600 });
-  const ctx = M.loadManifest(manifestFile);
+  const ctx = M.loadManifest(manifestFile, review, reviewKey);
   const snapshot = { head: { id: '0x1220' + '03'.repeat(32), height: '100', time: '400000000', lib: '90' }, nonce: '1', balance: '100000000000', mana: '100000000000', policyVersion: manifest.policy.version };
   async function pkg(kind = 'transfer', opts = {}) {
-    const op = kind === 'transfer' ? await MP.encodeTransfer(treasury.address, koin, opts.to || recipient, opts.raw || 150000000n)
+    const op = kind === 'transfer' ? await MP.encodeTransfer(treasury.address, manifest.token.contract, opts.to || recipient, opts.raw || 150000000n)
       : await MP.encodePolicy(treasury.address, opts.owners || owners.slice(0, 3).map(s => s.address).sort(MP.compareAddresses), opts.threshold || 2);
     const { Transaction } = require('koilib');
-    const transaction = await Transaction.prepareTransaction({ header: { chain_id: chainId, rc_limit: '10000000', nonce: utils.encodeBase64url(Buffer.from([40, 2])), payer: treasury.address }, operations: [op], signatures: [] });
+    const transaction = await Transaction.prepareTransaction({ header: { chain_id: manifest.network.chainId, rc_limit: '10000000', nonce: utils.encodeBase64url(Buffer.from([40, 2])), payer: treasury.address }, operations: [op], signatures: [] });
     return { schema: 1, kind: 'kcli-multisig-transaction', manifestSha256: ctx.manifestSha256, note: opts.note ?? null, transaction, snapshot: structuredClone(snapshot) };
   }
   return { ctx, manifest, manifestFile, snapshot, pkg };
@@ -41,6 +41,7 @@ async function signedBy(f, p, signers) { for (const s of signers) p = await M.ap
 
 // ------------------------------------------------------------------------------------------ RPC simulator
 async function rpcFixture(f, overrides = {}) {
+  const chainId = f.manifest.network.chainId, koin = f.manifest.token.contract;
   const state = { nonce: 'KAE=', mana: '100000000000', balance: '100000000000', policy: { owners: f.manifest.policy.owners, threshold: f.manifest.policy.threshold, version: f.manifest.policy.version },
     allowances: [], storedPolicy: false, sends: 0, tx: null, irreversible: false, calls: [], ...overrides };
   const T = new Contract({ id: treasury.address, abi: MP.TREASURY_ABI }), K = new Contract({ id: koin, abi: MP.KOIN_ABI });
@@ -53,7 +54,7 @@ async function rpcFixture(f, overrides = {}) {
     if (method === 'chain.get_chain_id') return { chain_id: state.chainId || chainId };
     if (method === 'chain.get_head_info') {
       const height = state.height ?? 100; if (state.advancing) state.height = height + 1;
-      return { head_topology: { id: blockId(height), height: String(height) }, head_state_merkle_root: state.root || 'synthetic-stable-state', head_block_time: '400000000', last_irreversible_block: state.lib || (state.irreversible ? '100' : '90') };
+      return { head_topology: { id: blockId(height), height: String(height) }, head_state_merkle_root: state.root || 'synthetic-stable-state', head_block_time: state.time || '400000000', last_irreversible_block: state.lib || (state.irreversible ? '100' : '90') };
     }
     if (method === 'chain.get_account_nonce') return params.account === treasury.address ? { nonce: state.nonce } : {};
     if (method === 'chain.get_account_rc') return { rc: state.mana };
@@ -68,6 +69,7 @@ async function rpcFixture(f, overrides = {}) {
       return { value: utils.encodeBase64url(await VP.kernel.serialize({ value: object }, 'Result')) };
     }
     if (method === 'chain.read_contract') {
+      if (params.contract_id === require('../dist/multisig-network').PUBLIC_FUND.mainnet) return {};
       if (params.contract_id === treasury.address) {
         const d = await T.decodeOperation({ call_contract: { contract_id: params.contract_id, entry_point: params.entry_point, args: params.args || '' } });
         const results = { get_policy: state.policy, get_template: { name: MP.TEMPLATE_NAME, version: MP.TEMPLATE_VERSION, chain_id: chainId, koin_contract: koin, min_owners: 3, max_owners: 15 } };
@@ -94,8 +96,9 @@ async function rpcFixture(f, overrides = {}) {
         const r = await MP.reviewOperation(state.tx.operations[0].call_contract, treasury.address, koin);
         if (r.kind === 'transfer') events = [{ name: 'token.transfer_event', source: koin, data: utils.encodeBase64url(await ser.serialize({ from: treasury.address, to: state.eventTo || r.to, value: r.raw }, 'koin.transfer_event')), impacted: [r.to, treasury.address] }];
       }
-      return { block_items: [{ block_id: id, block_height: String(height), block: { id, header: { height: String(height), previous: blockId(height - 1) }, transactions: included && height === 100 ? [included] : [] },
-        receipt: { id, height: String(height), state_delta_entries: height > 100 ? (state.deltas || []) : [], transaction_receipts: state.tx && height === 100 ? [{ id: state.tx.id, reverted: !!state.reverted, events }] : [] } }] };
+      const anchor = height === 100 ? (state.anchor || {}) : {};
+      return { block_items: [{ block_id: id, block_height: String(height), block: { id: anchor.blockId || id, header: { height: anchor.headerHeight || String(height), previous: blockId(height - 1) }, transactions: included && height === 100 ? [included] : [] },
+        receipt: { id: anchor.receiptId || id, height: anchor.receiptHeight || String(height), state_delta_entries: height > 100 ? (state.deltas || []) : [], transaction_receipts: state.tx && height === 100 ? [{ id: state.tx.id, reverted: !!state.reverted, events }] : [] } }] };
     }
     throw Error('unsupported fixture method');
   }
@@ -108,6 +111,6 @@ async function rpcFixture(f, overrides = {}) {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = 'http://127.0.0.1:' + server.address().port;
   const { MultisigProvider } = require('../dist/multisig-network');
-  return { state, url, server, provider: (deadlineMs = 60000) => new MultisigProvider(url, 'local', Date.now() + deadlineMs), close: () => new Promise(resolve => server.close(resolve)) };
+  return { state, url, server, answer, provider: (deadlineMs = 60000) => new MultisigProvider(url, 'local', Date.now() + deadlineMs), close: () => new Promise(resolve => server.close(resolve)) };
 }
 module.exports = { fixture, manifestFor, rpcFixture, signedBy, owners, outsider, treasury, koin, recipient, chainId, code, bySeed };

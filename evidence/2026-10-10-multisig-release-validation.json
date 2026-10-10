@@ -1,0 +1,356 @@
+{
+  "schema": 1,
+  "date": "2026-10-10",
+  "pr": "https://github.com/pgarciagon/kcli/pull/2",
+  "reviewedOriginalHead": "00813ff8ba6806836acdd9f231a9cd3de0736f20",
+  "base": "29d182d4843c49b09bb99040a2638e44054f84ad",
+  "sourceSha256": {
+    "src/multisig.ts": "108cbf6060e932cb1a8bd955b00e0ac447b0f159c6e2201889a40c143940b690",
+    "src/multisig-network.ts": "b2eaf2edf44805704135507be9b3c94bb1706bb2b18c5d5572378826a0d93344",
+    "src/multisig-protocol.ts": "522cbb2036cd3233c09beb24896ddb4bbb055f2260a9c58f4385503047786f42",
+    "src/multisig-cli.ts": "109943887a120378377c497ec5fd5a04eb46220a5a2f2a28de5f368b69a7e197",
+    "tests/multisig-fixture.js": "3c49e011c42875e41d1db7946f8a82895289476de5434ff275c52eb0ed34fc6a",
+    "tests/multisig-finality.test.js": "f5a49005e0b8ce4ca148184b1678b923c57bf2de4bf2e0f60acb0e29fc5e99e5",
+    "tests/fixtures/multisig-rpc-preload.cjs": "6efbf824dfde9c5ea28ae3c5134014f140ddea42c90f0fe25648b26a8148e8d1"
+  },
+  "unitTests": [
+    {
+      "node": "22.12.0",
+      "passed": 145,
+      "failed": 0
+    },
+    {
+      "node": "23.11.0",
+      "passed": 145,
+      "failed": 0
+    }
+  ],
+  "review": {
+    "type": "fresh read-only agent review; not an external security audit",
+    "resolved": [
+      "enclosing inclusion anchors",
+      "bounded witness head lag",
+      "first-use journal ancestor durability",
+      "test observer side effects"
+    ],
+    "openFindings": 0
+  },
+  "reproduction": {
+    "inputs": {
+      "schema": 1,
+      "template": "koinos-multisig-treasury",
+      "templateVersion": "1.0.0",
+      "network": "local",
+      "chainId": "EiD3i3yxv2aEUIbat5bRSakYgKqim9RCQ0B1w8DMvaCrWw==",
+      "koinContract": "1BRmrUgtSQVUggoeE9weG4f7nidyydnYfQ",
+      "treasury": "1PFuMTUTQRXVwJ5szxYafHQ8Jm2YsH8QJR",
+      "owners": [
+        "115uvMp7TtWbPKFDNAxnNGpoZfeyECbShf",
+        "16HWLMuVR84ugcF3ehsc39KxcdoXKZNjuB",
+        "19PPJmaX7mAM6M9Acz4kwbcD9dCsspnC6N",
+        "1FqLKD73dSDPVQXAkCZZi9hkjzjroWcFhk",
+        "1MYb14dE4i8bo8bzhpnLKU2XAz62B3sCzQ"
+      ],
+      "threshold": 3
+    },
+    "arm64": {
+      "schema": 1,
+      "template": "koinos-multisig-treasury",
+      "templateVersion": "1.0.0",
+      "inputsSha256": "f81b1daf812cdab00a14a45a3be3cfa4f50824d68dc42f1ad25567a2edee8f2e",
+      "sourceSha256": "cc625fbd251a194f4432d2022974b43db0d6ad1f2ba8132efd18320510f06c54",
+      "wasmSha256": "6ffdc24ff65a82a49da67e48479135bace82fdbc942eac58f54bf9f3541a526d",
+      "wasmSize": 56779,
+      "abiSha256": "3b2d0b97d355b70db007f72d58c71294275f03f35baa38fcc68d0b1767e46028",
+      "toolchain": {
+        "tree": "koinos/koinos-contracts-as@4fc33bbe0520a77a89619da1e9e6efe98e7c423c contracts/koin (yarn --frozen-lockfile --ignore-scripts)",
+        "treeSha256": "e5289f1f492a33c4f6d22ae5eef49df1f9041c58f9d5990922855aeda587d9c5",
+        "sdkAs": "1.3.0",
+        "assemblyscript": "0.27.29",
+        "protoAs": "2.2.0",
+        "protoc": "3.21.12",
+        "node": "v22.12.0",
+        "arch": "arm64",
+        "flags": "--target release --use abort= --use BUILD_FOR_TESTING=0 --disable sign-extension"
+      }
+    },
+    "amd64": {
+      "schema": 1,
+      "template": "koinos-multisig-treasury",
+      "templateVersion": "1.0.0",
+      "inputsSha256": "f81b1daf812cdab00a14a45a3be3cfa4f50824d68dc42f1ad25567a2edee8f2e",
+      "sourceSha256": "cc625fbd251a194f4432d2022974b43db0d6ad1f2ba8132efd18320510f06c54",
+      "wasmSha256": "6ffdc24ff65a82a49da67e48479135bace82fdbc942eac58f54bf9f3541a526d",
+      "wasmSize": 56779,
+      "abiSha256": "3b2d0b97d355b70db007f72d58c71294275f03f35baa38fcc68d0b1767e46028",
+      "toolchain": {
+        "tree": "koinos/koinos-contracts-as@4fc33bbe0520a77a89619da1e9e6efe98e7c423c contracts/koin (yarn --frozen-lockfile --ignore-scripts)",
+        "treeSha256": "e5289f1f492a33c4f6d22ae5eef49df1f9041c58f9d5990922855aeda587d9c5",
+        "sdkAs": "1.3.0",
+        "assemblyscript": "0.27.29",
+        "protoAs": "2.2.0",
+        "protoc": "3.21.12",
+        "node": "v22.12.0",
+        "arch": "x64",
+        "flags": "--target release --use abort= --use BUILD_FOR_TESTING=0 --disable sign-extension"
+      }
+    },
+    "byteIdenticalWasm": true,
+    "byteIdenticalAbi": true,
+    "twoCleanBuildsEach": true,
+    "sameHost": true,
+    "amd64Emulated": true
+  },
+  "contract": {
+    "schema": 1,
+    "chainId": "EiD3i3yxv2aEUIbat5bRSakYgKqim9RCQ0B1w8DMvaCrWw==",
+    "koin": "1BRmrUgtSQVUggoeE9weG4f7nidyydnYfQ",
+    "mainTreasury": "12PLx9dj6fmx5DYjtfMxLV1juBzMMYFVHP",
+    "artifact": {
+      "schema": 1,
+      "template": "koinos-multisig-treasury",
+      "templateVersion": "1.0.0",
+      "inputsSha256": "23c4075cb1d0d383cab22a8ec4c03c747ad0762fa5d4903e2c82dc885a2dafb3",
+      "sourceSha256": "cc625fbd251a194f4432d2022974b43db0d6ad1f2ba8132efd18320510f06c54",
+      "wasmSha256": "52f47bb566436390b1aa8f6666ccc5bec13a9e987042b9ed58299c7ac70938f8",
+      "wasmSize": 56779,
+      "abiSha256": "3b2d0b97d355b70db007f72d58c71294275f03f35baa38fcc68d0b1767e46028",
+      "toolchain": {
+        "tree": "koinos/koinos-contracts-as@4fc33bbe0520a77a89619da1e9e6efe98e7c423c contracts/koin (yarn --frozen-lockfile --ignore-scripts)",
+        "treeSha256": "e5289f1f492a33c4f6d22ae5eef49df1f9041c58f9d5990922855aeda587d9c5",
+        "sdkAs": "1.3.0",
+        "assemblyscript": "0.27.29",
+        "protoAs": "2.2.0",
+        "protoc": "3.21.12",
+        "node": "v22.12.0",
+        "arch": "arm64",
+        "flags": "--target release --use abort= --use BUILD_FOR_TESTING=0 --disable sign-extension"
+      }
+    },
+    "results": [
+      {
+        "name": "bootstrap: canonical irreversible single-op upload (exact body from its block), code + metadata hash, 3 flags, empty policy space, no allowances, nonce 0->1, initial policy v0 (incl. a \"11…\" owner), template",
+        "transactionId": "0x1220c70497f9c821c9ab241f28ad2b0f251e288803bda89c5a8b64c88196ec46d14c",
+        "block": "0x1220fb82f61c0fc28b4583299214e1358f695f15e4e979ec2720f25af58119ab72ab",
+        "height": "192",
+        "rcUsed": "1422052",
+        "wasmSha256": "52f47bb566436390b1aa8f6666ccc5bec13a9e987042b9ed58299c7ac70938f8",
+        "wasmSize": 56779
+      },
+      {
+        "name": "all 32 signer subsets of 3-of-5: exactly the 16 with >=3 distinct owners move KOIN",
+        "accepted": 16,
+        "refused": 16,
+        "rcUsedBySignatures": {
+          "3": {
+            "min": 2526641,
+            "max": 2531051
+          },
+          "4": {
+            "min": 2787818,
+            "max": 2791346
+          },
+          "5": {
+            "min": 3307925,
+            "max": 3307925
+          }
+        }
+      },
+      {
+        "name": "identity counting: duplicate, distinct-nonce duplicate, high-s, non-owner, treasury key, garbage and excess signatures all refuse",
+        "sameSignatureTwice": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "sameOwnerTwoDistinctSignatures": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "highSMalleatedDuplicate": "refused: {\"error\":\"signature must be canonical\",\"code\":-202,\"logs\":[]}",
+        "quorumPlusNonOwner": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "quorumPlusTreasuryKey": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "quorumMinusOnePlusGarbage": "refused: {\"error\":\"recovery id mismatch, must be in range [31,33]\",\"code\":-1,\"logs\":[]}",
+        "quorumMinusOnePlusWrongDigest": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "sixSignaturesMoreThanOwners": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco"
+      },
+      {
+        "name": "original address key alone cannot transfer, approve, upload (same code or flags off), pay Mana or be sponsored",
+        "treasuryKeyTransfer": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "treasuryKeyApprove": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "treasuryKeyUploadSameCode": "refused: {\"error\":\"return buffer is not large enough for the return value\",\"code\":-1,\"logs\":[]}",
+        "treasuryKeyUploadFlagsOff": "refused: {\"error\":\"return buffer is not large enough for the return value\",\"code\":-1,\"logs\":[]}",
+        "treasuryKeyTinyReplacement": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "outsiderPaysUploadByTreasuryKey": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized action\",\"account\":",
+        "treasuryKeySetPolicy": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "treasuryKeyPaysOutsiderCall": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "outsiderPaysTreasuryKeyTransfer": "refused: {\"error\":\"account 'from' has not authorized transfer\",\"code\":1,\"logs\":[\"transaction revert"
+      },
+      {
+        "name": "quorum cannot upload, approve, burn, batch, mix, memo, zero, self, bad checksum, other payer, payee or nest",
+        "quorumUploadSameCode": "refused: {\"error\":\"return buffer is not large enough for the return value\",\"code\":-1,\"logs\":[]}",
+        "quorumTinyReplacement": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "outsiderPaysUploadByQuorum": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized action\",\"account\":",
+        "quorumApprove": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "quorumBurn": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "quorumTwoTransfers": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "quorumTransferPlusPolicy": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "quorumMemo": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "quorumZeroValue": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "quorumToSelf": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "quorumBadRecipientChecksum": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "quorumTransferFromOtherAccount": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "quorumArbitraryContractCall": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "quorumTransferUnknownField": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "quorumOtherPayer": "refused: {\"error\":\"account 'from' has not authorized transfer\",\"code\":1,\"logs\":[\"transaction revert",
+        "quorumWithPayee": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "quorumNestedViaProbe": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "quorumNestedViaProbeOtherPayer": "wrapper included, no KOIN transfer event, balance unchanged"
+      },
+      {
+        "name": "an executed quorum transaction cannot be replayed (treasury nonce)",
+        "replay": "refused: {\"error\":\"invalid transaction nonce - account: 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp, nonce: "
+      },
+      {
+        "name": "policy: invalid replacements and wrong quorums refuse; valid rotation by the old quorum is atomic (v1, event); removed owners and stale nonce fail; new quorum works",
+        "thresholdOne": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "thresholdAll": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "twoOwners": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "sixteenOwners": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "unsorted": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "duplicate": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "treasuryAsOwner": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "minorityThreshold": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "validPolicyWithPayee": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "policyUnknownField": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "twoOldOwners": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "newOwnersOnly": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "directCallerNested": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "heldOldPaymentAfterRotation": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "oldQuorumAfterRotation": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "oneNewOwner": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco",
+        "rotationRcUsed": "2419100",
+        "newQuorumTransferRcUsed": "2138851"
+      },
+      {
+        "name": "upper bound: rotation to 15 owners / threshold 14 (v2); 13 signatures refuse, 14 and 15 move KOIN within the 8 KB buffer",
+        "rotationRcUsed": "3211089",
+        "rc14": "6969826",
+        "rc15": "7255852",
+        "thirteen": "refused: {\"error\":\"account 12plx9dj6fmx5dyjtfmxlv1jubzmmyfvhp has not authorized transaction\",\"acco"
+      },
+      {
+        "name": "artifact is bound to its treasury address: uploaded elsewhere it authorizes nothing and get_policy fails closed",
+        "transfer": "refused: {\"error\":\"account 1n8evu95sgmkj8mktbwieezr5nbbhrz7ps has not authorized transaction\",\"acco"
+      },
+      {
+        "name": "artifact is bound to its chain: a Mainnet-bound build refuses every quorum transaction on another chain",
+        "transfer": "refused: {\"error\":\"account 14br29hhgyjjpr9sfawauz2tgtgecelba6 has not authorized transaction\",\"acco"
+      },
+      {
+        "name": "bootstrap attack 1 (pre-upload KOIN allowance) is real and visible to verification: allowance listed, bootstrap had 2 operations",
+        "allowances": 1,
+        "drainedWithoutOwners": "10 KOIN"
+      },
+      {
+        "name": "bootstrap attack 2 (seeded policy storage) is real and visible to verification: stored policy object, version 1, foreign owners, nonce 2 (not 1)",
+        "storedPolicy": true,
+        "version": "1",
+        "nonce": 2
+      }
+    ]
+  },
+  "installedCli": {
+    "schema": 1,
+    "networkProfile": "local",
+    "publicChainUsed": false,
+    "syntheticOnly": true,
+    "independentCustody": false,
+    "steps": [
+      {
+        "name": "wallets: bootstrap key and six members imported into separate HOMEs through hidden PTY input"
+      },
+      {
+        "name": "prepare-deploy + inspect-deploy: unused address checked, single upload with all three flags, exact artifact hashes",
+        "bootstrapId": "0x1220de8a9fb9ebba75432074bd1abdbb4d5ef68b3d6a5fb9b21fb86d0ac18c38c599",
+        "wasmSha256": "cefffaec01629a6ced1c727f8e3486a62c0e92cbeb72cbab0050f59bd8b0e368"
+      },
+      {
+        "name": "sign-deploy (member key refused) + submit-deploy dry-run + one exact submission, irreversible",
+        "block": "0x12202b3aa47fe8aea285b54691f4a120ccad4633225587d1e4102a0c91d486658f20",
+        "height": "193"
+      },
+      {
+        "name": "verify-deployment: code + metadata hash, flags, empty policy space, policy v0, nonce 1, no allowances, read at one block that then became irreversible -> manifest written",
+        "manifestSha256": "e6db27e6f1792af3274e204154ffaff197b9ec5de78e65a7649a015c0a2c5e8a"
+      },
+      {
+        "name": "a second bootstrap submission is refused"
+      },
+      {
+        "name": "info: verified code/flags/policy; balance and Mana read",
+        "balance": "101000000000",
+        "mana": "100999843330",
+        "nonce": "1"
+      },
+      {
+        "name": "payment: prepare, non-owner refused, 3 independent member signatures, partial refused, merge, dry-run, one submit, irreversible + event verified, resend refused, reconcile",
+        "id": "0x1220c4577fc119594da4e8566c4260856eec1db942c0de4352241ee2a8e47d77f392",
+        "block": "0x122026e0c59093a598140c91f42b0e7f4b223182793bd262dca950174e564db90a7d",
+        "recipientCredit": "12.5"
+      },
+      {
+        "name": "rotation: replacement approved by the old quorum (merge quorum-ready, dry-run), irreversible, new manifest snapshot; old manifest refused for info and prepare",
+        "id": "0x12203df8ffc54ca9654b463a31bd60d1698461770cb4897252beef98e0fb3d641ea6",
+        "manifestSha256": "fd635465444efcc1ed8b0421ebe08ae9988858378932007524588153fee5372f"
+      },
+      {
+        "name": "post-rotation payment: removed member refused, new quorum (incl. new member) merges, dry-runs, pays and reconciles; old packages bind the old manifest",
+        "id": "0x122097ee991c715871962512be2464226f351ba4f3fe7d8cf517fce75673d0da19d5"
+      }
+    ]
+  },
+  "independentBootstrap": {
+    "schema": 1,
+    "client": "independent koilib controller",
+    "bootstrapTransaction": "0x1220de8a9fb9ebba75432074bd1abdbb4d5ef68b3d6a5fb9b21fb86d0ac18c38c599",
+    "block": "0x12202b3aa47fe8aea285b54691f4a120ccad4633225587d1e4102a0c91d486658f20",
+    "height": "193",
+    "operations": 1,
+    "payer": "1CcF9kHKwBbGujTEQqNw5jYhXns1SXoF5w",
+    "payee": null,
+    "rawBytecodeSha256": "cefffaec01629a6ced1c727f8e3486a62c0e92cbeb72cbab0050f59bd8b0e368",
+    "metadataHash": "EiDO__rsAWKabO0ccn-ONIamLA6Sy-tyy6sAUPWb2LDjaA==",
+    "flags": {
+      "call": true,
+      "transaction": true,
+      "upload": true,
+      "system": false
+    },
+    "policySpaceEmpty": true,
+    "allowances": 0,
+    "nonce": 1
+  },
+  "independentBypass": {
+    "schema": 1,
+    "client": "independent koilib controller",
+    "cases": {
+      "transfer": "refused: {\"error\":\"account 1ccf9khkwbbgujteqqnw5jyhxns1sxof5w has not authorized transaction\",\"acco",
+      "setPolicy": "refused: {\"error\":\"account 1ccf9khkwbbgujteqqnw5jyhxns1sxof5w has not authorized transaction\",\"acco",
+      "tinyReplacementPaidByTreasury": "refused: {\"error\":\"account 1ccf9khkwbbgujteqqnw5jyhxns1sxof5w has not authorized transaction\",\"acco",
+      "tinyReplacementPaidByOther": "refused: {\"error\":\"account 1ccf9khkwbbgujteqqnw5jyhxns1sxof5w has not authorized action\",\"account\":"
+    },
+    "codeUnchanged": true
+  },
+  "lab": {
+    "genesisSha256": "add4c4dc31a3cdcf5065fdc2943f10dc3ece5de9bf18c073ce6855c38a90046f",
+    "descriptorSha256": "a30b35a0c781e13b0003722ea3ffa7e915d961aafc2ed37d51802a05cb07538a",
+    "source": "VortexBridge/vortex-bridge-v2@42b0ab20653047ec0275c3130accf9210ce4b822 public lab config; KOIN at 4fc33bb",
+    "probe": "lab-only nested-call stand-in rebuilt with pinned SDK; forward positive control and call_ignore negative control",
+    "probeWasmSha256": "3ea243e23902d335673974cca09bd272f8cee56191f531bccace352a2c560dc5",
+    "syntheticOnly": true,
+    "publicChainUsed": false,
+    "independentCustody": false
+  },
+  "limits": [
+    "single host and local producer",
+    "synthetic Mainnet witnesses",
+    "no physical crash experiment",
+    "no external security audit",
+    "not Mainnet qualification",
+    "no real foundation custody"
+  ]
+}

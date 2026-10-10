@@ -1,6 +1,6 @@
 # Multisig Treasury Implementation Status
 
-Updated 9 October 2026. Implements the plan of issue #1 (foundation treasury multisig) through Phase 3 on
+Updated 10 October 2026. Implements the plan of issue #1 (foundation treasury multisig) through Phase 3 on
 **disposable local chains**, plus one rehearsal on the official testnet with synthetic test-only members on one
 machine. Not released, not audited, not deployed on Mainnet, no real custody. The package version stays 1.6.0 until the release gates below pass.
 
@@ -85,6 +85,22 @@ governance lookup. It proves contract and client behaviour, not network availabi
   reproduction and negative-authority checks remain separate (Mainnet: required before any signing).
 - Contract-call authority checks the operation and its arguments directly rather than relying on KOIN's
   `data`; both must agree.
+
+## PR #2 finality correction
+
+The preliminary inclusion check now corroborates the current canonical chain at the common LIB without
+requiring the transaction block to be irreversible first. Canonical reversible inclusion is pending, not
+a readback error. Both RPCs must still finalize the transaction for terminal success or reversion; exact
+body/signature/receipt/event verification, final canonical rechecks, journals, nonce locks and one-shot
+submission are unchanged. The correction also applies to bootstrap inclusion and deployment verification.
+
+See [Finality correction validation](MULTISIG_FINALITY_FIX.md) for the regression, isolated CLI checks,
+status/exit-code contract and fresh synthetic validation. This does not upgrade the historical chain
+evidence above into Mainnet qualification or an independent security audit. Fresh review follow-ups also
+bind enclosing block/receipt anchors, preserve waiting during bounded witness head lag, and sync first-use
+journal ancestor entries before sending. The full suite passes 145 tests on Node 22 and Node 23.
+See [release validation](MULTISIG_RELEASE_VALIDATION.md) for current publication gates. No version bump
+or release has occurred yet; the authorized target is kcli 1.7.0, with contract template 1.0.0 unchanged.
 
 ## Not done (open gates)
 

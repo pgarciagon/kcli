@@ -229,6 +229,8 @@ export async function preflight(ctx: MultisigContext, provider: Provider, pkg: M
 /// package could broadcast a different valid subset (the ID does not cover signatures), which is still this
 /// execution and must reconcile.
 async function exactIncluded(block: any, expected: any, id: string, signaturesValid: (tx: any) => Promise<void>): Promise<any> {
+  requireValue(block.block?.id === block.block_id && block.block.header?.height === block.block_height &&
+    block.receipt?.id === block.block_id && block.receipt.height === block.block_height, 'Inclusion block or receipt anchor does not match the canonical item.');
   const included = block.block?.transactions?.find((t: any) => t.id === id), receipt = block.receipt?.transaction_receipts?.find((t: any) => t.id === id);
   requireValue(included && receipt && typeof (receipt.reverted ?? false) === 'boolean', 'Inclusion transaction or receipt does not match the package.');
   const exact = structuredClone(included); const want = structuredClone(expected);
@@ -258,7 +260,11 @@ async function findIncluded(ctx: { profile: MultisigProfile }, provider: Provide
     const receipt = await exactIncluded(block, expected, id, signaturesValid);
     let irreversible = uint(head.last_irreversible_block) >= height;
     if (witness) {
-      const witnessHead = await witness.getHeadInfo(); await corroborate(provider, witness, head, witnessHead, height);
+      // Corroborate the current chain before classifying reversible inclusion; both LIBs gate finality below.
+      const witnessHead = await witness.getHeadInfo(); await corroborate(provider, witness, head, witnessHead);
+      if (uint(witnessHead.head_topology.height) < height) {
+        return { status: 'unknown', id, message: 'Primary inclusion is not yet corroborated: the independent RPC head has not reached the transaction block. Keep reconciling; never resend automatically.' };
+      }
       const other = await canonicalBlock(witness, witnessHead, height, true);
       const otherReceipt = await exactIncluded(other, expected, id, signaturesValid);
       requireValue(other.block_id === blockId && canonical({ r: otherReceipt.reverted ?? false, e: otherReceipt.events || [] }) === canonical({ r: receipt.reverted ?? false, e: receipt.events || [] }), 'Independent RPC disagrees on inclusion, receipt or events.');
@@ -299,8 +305,17 @@ export async function reconcile(ctx: MultisigContext, provider: Provider, pkg: M
 /// One canonical private journal per chain and paying account under ~/.kcli (no per-call directory can be chosen
 /// to sidestep it). An exclusive per-nonce lock stops a second local submission for the same treasury nonce.
 export function journalDirectory(chainId: string, account: string): string {
-  const root = path.join(os.homedir(), '.kcli'); privateDirectory(root, true);
-  let dir = root; for (const part of ['multisig-journal', sha(chainId).slice(0, 16), address(account)]) { dir = path.join(dir, part); privateDirectory(dir, true); }
+  const durableDirectory = (input: string) => {
+    const dir = privateDirectory(input, true);
+    // Sync even existing entries: an earlier interrupted/failed first-use attempt may have created them.
+    for (const p of [path.dirname(dir), dir]) {
+      const fd = fs.openSync(p, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+      try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    }
+    return dir;
+  };
+  let dir = durableDirectory(path.join(os.homedir(), '.kcli'));
+  for (const part of ['multisig-journal', sha(chainId).slice(0, 16), address(account)]) dir = durableDirectory(path.join(dir, part));
   return dir;
 }
 async function sendOnce(provider: Provider, transaction: any, id: string, record: any): Promise<string> {

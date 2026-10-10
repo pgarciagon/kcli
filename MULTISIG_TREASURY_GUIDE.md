@@ -67,6 +67,9 @@ never overwrites an existing file. Members do the same on their own devices.
 
    `prepare-deploy` and `submit-deploy` refuse an address that already paid for a transaction, has a
    contract or contract storage, KOIN allowances or (where a Fund contract is bound) Fund votes.
+   `submit-deploy` keeps waiting through canonical reversible inclusion, including a reversible reversion.
+   On Mainnet, both reviewed RPCs must report the bootstrap block irreversible before `irreversible`
+   (exit 0) or `reverted` (exit 1). A pending result at the deadline is exit 3, not permission to resend.
 7. **Verify the deployment and write the manifest** (only on an irreversible block):
 
    ```bash
@@ -83,6 +86,9 @@ never overwrites an existing file. Members do the same on their own devices.
    `observation-not-irreversible` (all checks passed, but at a block that is not yet irreversible) are not final
    (exit 3, run it again later). Only `deployment-verified` writes a manifest. Never publish or
    fund an address without it.
+   If the bootstrap itself is still reversible, the command returns immediately with a pending status;
+   its `--wait` applies to observation-block finality after bootstrap finality is established. On Mainnet,
+   both RPCs must finalize the bootstrap and every checklist observation anchor before a manifest is written.
 8. **Independent review.** A reviewer reproduces the build, repeats the negative checks with a different
    client (the address key alone cannot transfer, pay Mana, change policy or upload) and compares the
    manifest. Members compare the manifest's SHA-256 fingerprint through an independent channel; a file from
@@ -156,6 +162,20 @@ KOIN transfer event with exactly the reviewed sender, recipient and amount. `inc
 `included-reverted` are not final; `submitted-unconfirmed` and `unknown` (exit 3) mean the outcome is not
 known — reconcile again, never rebuild at a new nonce because a request timed out. `reverted` (exit 1) is
 final only once irreversible.
+
+On Mainnet, canonical agreement and transaction finality are separate checks. Both reviewed RPCs must
+agree on the exact inclusion, signatures, receipt and events; both irreversible heights must cover the
+transaction block for a terminal result. Ordinary pending finality keeps `submit --wait` polling until the
+wait ends, returning `included` or `included-reverted` with exit 3 if necessary. RPC failures or
+contradictory evidence cannot become success: submission readback failures return `submitted-unconfirmed`
+(exit 3), while read-only reconciliation refuses invalid evidence (exit 1). The same signed package,
+submission intent and nonce lock are retained; reconciliation never submits again.
+
+If the corroborating RPC has not yet reached the transaction block, an otherwise corroborated bounded
+head lag is pending evidence: `reconcile` returns `unknown` (exit 3), and submission keeps waiting. If
+the lag remains at the deadline it returns `submitted-unconfirmed`, not success or a final reversion.
+The journal's directory entries and private intent/nonce files must be synced before broadcast; a
+filesystem sync failure refuses the send. Preserve this journal when recovering a coordinator.
 
 ## 6. Member changes
 
