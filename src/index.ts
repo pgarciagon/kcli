@@ -26,6 +26,8 @@ const program = new Command();
 const CLI_VERSION = packageJson.version;
 
 const LATEST_CHANGES = [
+  'Transfers use fixed 8-decimal encoding for configured KOIN/VHP contracts and refuse conflicting RPC decimals.',
+  'Custom-token transfers require readable integer decimals from 0 to 18; summaries show the exact base-unit amount.',
   'Fund reads support an empty RPC ABI index through a pinned read-only Mainnet interface; voting still requires RPC metadata.',
   'Fund reads validate RPC envelopes and base64 while accepting protobuf-default empty votes without weakening allocation checks.',
   'Added contract-enforced multisig KOIN treasuries with offline approvals, policy rotation and verified bootstrap.',

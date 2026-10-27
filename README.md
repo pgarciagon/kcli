@@ -1,6 +1,6 @@
 # kcli - Koinos CLI
 
-Current version: `1.7.1`
+Current version: `1.7.2`
 
 A command line tool for interacting with the Koinos blockchain, built with TypeScript and koilib.
 
@@ -10,14 +10,14 @@ The GitHub release includes a compiled Node.js package, not a standalone native
 binary. Use Node.js 22 and npm; runtime dependencies are installed by npm.
 
 ```bash
-npm install -g https://github.com/pgarciagon/kcli/releases/download/v1.7.1/kcli-1.7.1.tgz
+npm install -g https://github.com/pgarciagon/kcli/releases/download/v1.7.2/kcli-1.7.2.tgz
 kcli --version
 ```
 
 Alternatively, build the tagged source:
 
 ```bash
-git clone --branch v1.7.1 --depth 1 https://github.com/pgarciagon/kcli.git
+git clone --branch v1.7.2 --depth 1 https://github.com/pgarciagon/kcli.git
 cd kcli
 npm ci
 npm run build

@@ -1,6 +1,6 @@
 # Fund RPC Compatibility
 
-Software version: kcli 1.7.1. These changes are limited to Koinos Fund System
+Software version: kcli 1.7.2. These changes are limited to Koinos Fund System
 (KFS) reads and response decoding. They do not change the fund contract,
 allocation rules, wallet format, multisig/Vortex workflows or burn behavior.
 

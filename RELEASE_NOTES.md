@@ -1,3 +1,61 @@
+# kcli 1.7.2
+
+This patch release distributes the transfer amount-handling correction from
+[PR #5](https://github.com/pgarciagon/kcli/pull/5), merged as
+`d6fb3ce580e8c38b7bb33828ff1b374131177ce2` from reviewed head
+`75f7349c7766bdee2b1748de152060e1109f4ef5`.
+
+## Included Changes
+
+- `transfer` and `token-transfer` use fixed eight-decimal encoding for the
+  configured network's KOIN and VHP contracts. Conflicting RPC-reported
+  decimals refuse preparation before nonce access or submission.
+- Other tokens require readable integer decimals from 0 to 18. Failed metadata
+  reads no longer silently fall back to eight decimals; a valid protobuf-default
+  empty decimals result means zero decimals.
+- Transfer summaries display the exact base-unit amount alongside the decimal
+  amount, and `token-transfer` help documents the supported decimals range.
+- Eleven additional regression tests cover amount parsing, fixed system-token
+  decimals, custom tokens and refusal before submission. Existing KFS,
+  wallet/Vortex, multisig, dashboard and derivation coverage remains included.
+
+## Installation And Integrity
+
+Use Node.js 22 and npm. Download `kcli-1.7.2.tgz` and `SHA256SUMS` from the same
+[GitHub release](https://github.com/pgarciagon/kcli/releases/tag/v1.7.2).
+
+```bash
+shasum -a 256 -c SHA256SUMS
+npm install -g ./kcli-1.7.2.tgz
+kcli --version
+kcli --changes
+kcli token-transfer --help
+```
+
+The asset is a compiled JavaScript/ABI package, not a native executable or
+bundled runtime. npm resolves runtime dependencies at installation time;
+tagged source plus `npm ci` uses the committed lockfile. No npm registry
+publication or host global installation is part of this release task.
+
+## Validation And Limits
+
+Release validation covers all 172 tests on Node 22.12.0 and 23.11.0, the exact
+committed-source export, fresh disposable tarball installations, version and
+PATH assertions, package inspection, checksums and public download verification.
+Tests use synthetic keys, isolated homes and simulated/loopback RPCs. See the
+GitHub release notes for the final results and package checksum.
+
+Dependencies, treasury contract template 1.0.0 and multisig/Vortex behavior are
+unchanged. Local unreleased burn changes are excluded. This release does not
+establish a security audit, public-chain transaction success, independent
+custody or Mainnet treasury qualification. No real wallet/password, signing,
+chain submission or production service operation is part of validation.
+
+## Historical Releases
+
+The following notes describe earlier releases. Their installation commands
+install those versions, not 1.7.2.
+
 # kcli 1.7.1
 
 This patch release publishes the previously local KFS compatibility corrections
